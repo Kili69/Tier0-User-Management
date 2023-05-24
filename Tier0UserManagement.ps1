@@ -177,7 +177,7 @@ $PrivlegeDomainSid = @(
     "518", #Schema Admins
     "519", #"Enterprise Admins"
     "520", #Group Policy Creator Owner
-    "522", #Cloneable Domain Controllers
+    "522" #Cloneable Domain Controllers
 #    "527" #Enterprise Key Admins
     
 )
