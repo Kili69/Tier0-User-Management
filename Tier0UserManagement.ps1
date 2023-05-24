@@ -42,22 +42,33 @@ possibility of such damages
     Version Tracking
     2021-10-29
     Initial Version available on GitHub
+    2023-05-24
+    T0 service accounts located in the T0 service account OU, will be automatically added to Tier 0 users Group
+    T0 will not added to Protected User Group anymore
+    Managed User Accounts can now be member of a privileged Groups
 #>
 <#
     script parameters
 #>
 [CmdletBinding()]
 param (
+    #If this parameter is $true, users located not in the T0 Users OU automaticaly removed from privileged Groups
     [Parameter(Mandatory=$true)]
     [bool]
     $RemoveUserFromPrivilegedGroups,
+    #Is the OU Path for T0 Users
     [Parameter(Mandatory=$false)]
 	[string]
 	$PrivilegedOUPath,
-	# Parameter help description
+    #Is the OU path for T0 user accounts
+    [Parameter(Mandatory=$false)]
+    [string]
+    $PrivilegedServiceAccountOUPath,
+	#Name of the Tier 0 users group
 	[Parameter(Mandatory=$false)]
 	[string]
 	$Tier0UserGroupName,
+    #Is the name of the KerberosAuthentication Policy
 	[Parameter(Mandatory=$false)]
 	[string]
 	$KerberosPolicyName
@@ -68,6 +79,7 @@ function validateAndRemoveUser{
         [string] $SID
     )
     $UserDefaultContainer = (Get-ADDomain).UsersContainer
+    $ManagedUserAccountContainer = "CN=Managed Service Accounts,$((Get-ADDomain).DistinguishedName)"
     $Group = Get-ADGroup -Identity $SID
     if ($null -eq $Group){
         Write-Debug "$SID not found"
@@ -78,7 +90,7 @@ function validateAndRemoveUser{
     {
         if ($member.Sid -notlike "*-500") #Do not change the build in administrators group membership
         {
-        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer")){
+        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and $member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath" -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer") -and $member.distinguishedName -notlike "*,$ManagedUserAccountContainer"){
                 if ($RemoveUserFromPrivilegedGroups){
                     Write-Debug "remove $member from $($Group.DistinguishedName)"
                     Remove-ADGroupMember -Identity $GroupName -Members $member
@@ -90,46 +102,59 @@ function validateAndRemoveUser{
         }
     }
 }
+
+#main program
+$ScriptVersion = 2023052408
+Write-Output "Tier 0 user management version $scriptVersion"
+
 #region setting variables default values
 if($PrivilegedOUPath -eq ""){ 
     $PrivilegedOUPath = "OU=Tier 0 - Accounts,OU=Admin," + (Get-ADDomain).DistinguishedName
 }
 
+if ($PrivilegedServiceAccountOUPath -eq ""){
+    $PrivilegedServiceAccountOUPath = "OU=Tier 0 - Service Accounts,OU=Admin,$((Get-ADDomain).DistinguishedName)" 
+}
 if ($Tier0UserGroupName -eq ""){
     $Tier0UserGroupName = "T0-AllUsers"
 }
 if ($KerberosPolicyName -eq ""){ 
     $KerberosPolicyName = "Tier 0"
 }
-$ProtectedUsers = Get-ADGroup -Identity "$((Get-ADDomain).DomainSID)-525"
-#endregion
-#region Variables validation
-if ($null -eq $ProtectedUsers){
-    Write-Host "Protected Users not available"
-    exit 0xA1   
-}
+
+#region Parameter validation
+#Validate the Tier 0 group is available
 $Tier0UsersGroup = Get-ADGroup -Identity $Tier0UserGroupName
 if ($null -eq $Tier0UsersGroup){
     Write-Host "$Tier0UserGrupName not found"
     exit 0xA2
 }
+#Validate the Kerboers Authentication policy exists
 $KerberosAuthenticationPolicy = Get-ADAuthenticationPolicy -Filter {Name -eq $KerberosPolicyName}
 if ($null -eq $KerberosAuthenticationPolicy){
     Write-Host "$KerberosPolicyName not found"
     exit 0xA3
 }
+#Validate the Tier 0 users OU exists
 if ($null -eq (Get-ADOrganizationalUnit -Filter {DistinguishedName -eq $PrivilegedOUPath})){
     Write-Output "Tier 0 OU $PrivilegedOUPath not available"
     exit 0xA4
+}
+#Validate the Tier 0 service OU exists
+if ($null -eq (Get-ADOrganizationalUnit -Filter {DistinguishedName -eq $PrivilegedServiceAccountOUPath})){
+    Write-Output "Service Account OU $PrivilegedServiceAccountOUPath not available"
+    exit 0xA5
 }
 #endregion
 
 #region Validate the group membership and authentication policy settings in the Tier 0 OU 
 foreach ($user in Get-ADUser -SearchBase $PrivilegedOUPath -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf){
-	#validate the user is member of Protected Users
+	#region will be deleted
+    #validate the user is member of Protected Users
     if ($user.memberOf -notcontains $ProtectedUsers.DistinguishedName){
         Add-ADGroupMember $ProtectedUsers $user
     }
+    #endregion
 	#validate the user is member of the Tier 0 users group
 	if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
 		Add-ADGroupMember $Tier0UserGroupName $user
@@ -137,6 +162,11 @@ foreach ($user in Get-ADUser -SearchBase $PrivilegedOUPath -Filter * -Properties
 	#validate the Kerberos Authentication policy is assigned to the user
 	if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
         Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName}
+}
+foreach ($user in Get-ADUser -SearchBase $PrivilegedServiceAccountOUPath -Filter * -Properties memberOf){
+    if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
+        Add-GroupMember $user
+    }
 }
 #endregion
 
@@ -148,7 +178,7 @@ $PrivlegeDomainSid = @(
     "519", #"Enterprise Admins"
     "520", #Group Policy Creator Owner
     "522", #Cloneable Domain Controllers
-    "527" #Enterprise Key Admins
+#    "527" #Enterprise Key Admins
     
 )
 
