@@ -21,7 +21,9 @@ possibility of such damages
     This script manage Tier 0 users 
 
 .DESCRIPTION
-	In the modern Tier 0 level Tier 0 user are located in the T0 OU and member of Tier 0 users group and authentication policy
+	In the modern Tier 0 level Tier 0 user are located in the T0 OU and member of Tier 0 users group and authentication policy. This script will remove unexpcted users from privileged groups,
+    if they are not located in the Tier 0 users OU, Tier 0 service account ou, in the users container or in the group management service account container. 
+    Ther Tier 0 Kerberos Authentication Policy will be automatically atted to sers located in the Tier 0 User OU, but not for service acocunts and GMSA
 
 .EXAMPLE
 	.\T0usermgmt.ps1 $true
@@ -35,6 +37,8 @@ possibility of such damages
         is the name of the Tier 0 Deny user group
     -KerberosPolicyName
         Is the name of the Kerberos authentication policy
+    -PrivilegedServiceAccountOUPath
+        is the distinguisehdname of the Tier 0 service accounts
 
 .OUTPUTS
    none
@@ -53,9 +57,9 @@ possibility of such damages
 [CmdletBinding()]
 param (
     #If this parameter is $true, users located not in the T0 Users OU automaticaly removed from privileged Groups
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$false)]
     [bool]
-    $RemoveUserFromPrivilegedGroups,
+    $RemoveUserFromPrivilegedGroups=$true,
     #Is the OU Path for T0 Users
     [Parameter(Mandatory=$false)]
 	[string]
@@ -90,7 +94,7 @@ function validateAndRemoveUser{
     {
         if ($member.Sid -notlike "*-500") #Do not change the build in administrators group membership
         {
-        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and $member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath" -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer") -and $member.distinguishedName -notlike "*,$ManagedUserAccountContainer"){
+        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer") -and ($member.distinguishedName -notlike "*,$ManagedUserAccountContainer")){
                 if ($RemoveUserFromPrivilegedGroups){
                     Write-Debug "remove $member from $($Group.DistinguishedName)"
                     Remove-ADGroupMember -Identity $GroupName -Members $member
@@ -104,7 +108,7 @@ function validateAndRemoveUser{
 }
 
 #main program
-$ScriptVersion = 2023052408
+$ScriptVersion = 2023052520
 Write-Output "Tier 0 user management version $scriptVersion"
 
 #region setting variables default values
@@ -116,17 +120,17 @@ if ($PrivilegedServiceAccountOUPath -eq ""){
     $PrivilegedServiceAccountOUPath = "OU=Tier 0 - Service Accounts,OU=Admin,$((Get-ADDomain).DistinguishedName)" 
 }
 if ($Tier0UserGroupName -eq ""){
-    $Tier0UserGroupName = "T0-AllUsers"
+    $Tier0UserGroupName = "T0 - All Users"
 }
 if ($KerberosPolicyName -eq ""){ 
-    $KerberosPolicyName = "Tier 0"
+    $KerberosPolicyName = "Tier 0 Logon Restriction"
 }
 
 #region Parameter validation
 #Validate the Tier 0 group is available
 $Tier0UsersGroup = Get-ADGroup -Identity $Tier0UserGroupName
 if ($null -eq $Tier0UsersGroup){
-    Write-Host "$Tier0UserGrupName not found"
+    Write-Host "$Tier0GroupName not found"
     exit 0xA2
 }
 #Validate the Kerboers Authentication policy exists
@@ -149,12 +153,6 @@ if ($null -eq (Get-ADOrganizationalUnit -Filter {DistinguishedName -eq $Privileg
 
 #region Validate the group membership and authentication policy settings in the Tier 0 OU 
 foreach ($user in Get-ADUser -SearchBase $PrivilegedOUPath -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf){
-	#region will be deleted
-    #validate the user is member of Protected Users
-    if ($user.memberOf -notcontains $ProtectedUsers.DistinguishedName){
-        Add-ADGroupMember $ProtectedUsers $user
-    }
-    #endregion
 	#validate the user is member of the Tier 0 users group
 	if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
 		Add-ADGroupMember $Tier0UserGroupName $user
@@ -165,7 +163,7 @@ foreach ($user in Get-ADUser -SearchBase $PrivilegedOUPath -Filter * -Properties
 }
 foreach ($user in Get-ADUser -SearchBase $PrivilegedServiceAccountOUPath -Filter * -Properties memberOf){
     if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
-        Add-GroupMember $user
+        Add-GroupMember $Tier0UserGroupName $user
     }
 }
 #endregion
