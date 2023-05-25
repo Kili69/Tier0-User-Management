@@ -92,10 +92,10 @@ function validateAndRemoveUser{
 
     foreach ($member in (Get-ADGroupMember -Identity $Group))
     {
-        if ($member.Sid -notlike "*-500") #Do not change the build in administrators group membership
+        if (($member.Sid -notlike "*-500") -and ($member.objectClass -eq "user")) #Do not change the build in administrators group membership
         {
-        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer") -and ($member.distinguishedName -notlike "*,$ManagedUserAccountContainer")){
-                if ($RemoveUserFromPrivilegedGroups){
+        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer") -and ($member.distinguishedName -notlike "*,$ManagedUserAccountContainer")){    
+            if ($RemoveUserFromPrivilegedGroups){
                     Write-Debug "remove $member from $($Group.DistinguishedName)"
                     Remove-ADGroupMember -Identity $GroupName -Members $member
                 }
@@ -108,7 +108,7 @@ function validateAndRemoveUser{
 }
 
 #main program
-$ScriptVersion = 2023052520
+$ScriptVersion = 2023052521
 Write-Output "Tier 0 user management version $scriptVersion"
 
 #region setting variables default values
