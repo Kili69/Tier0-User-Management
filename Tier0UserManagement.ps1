@@ -39,6 +39,8 @@ possibility of such damages
         Is the name of the Kerberos authentication policy
     -PrivilegedServiceAccountOUPath
         is the distinguisehdname of the Tier 0 service accounts
+    -excludeusers
+        a list ob users who will not be removed from the privileged groups
 
 .OUTPUTS
    none
@@ -50,6 +52,10 @@ possibility of such damages
     T0 service accounts located in the T0 service account OU, will be automatically added to Tier 0 users Group
     T0 will not added to Protected User Group anymore
     Managed User Accounts can now be member of a privileged Groups
+    1.0.20230914
+        Version numbering changed
+        users from child will be removed if they are in a privileged group
+        new parameter introduced -excludeusers is a list of users who will be ignored by the script
 #>
 <#
     script parameters
@@ -75,31 +81,36 @@ param (
     #Is the name of the KerberosAuthentication Policy
 	[Parameter(Mandatory=$false)]
 	[string]
-	$KerberosPolicyName
+	$KerberosPolicyName,
+    #users of domain admins which should be disabled by the script
+    [Parameter (Mandatory=$false)]
+    [string]
+    $ExcludeUser
+
 )
 
 function validateAndRemoveUser{
     param(
         [string] $SID
     )
-    $UserDefaultContainer = (Get-ADDomain).UsersContainer
-    $ManagedUserAccountContainer = "CN=Managed Service Accounts,$((Get-ADDomain).DistinguishedName)"
-    $Group = Get-ADGroup -Identity $SID
+    $Group = Get-ADGroup -Identity $SID -Properties members
+    $Domain = Get-ADDomain
+    #validate the SID exists
     if ($null -eq $Group){
         Write-Debug "$SID not found"
         return
     }
 
-    foreach ($member in (Get-ADGroupMember -Identity $Group))
+    foreach ($Groupmember in $Group.members)
     {
-        if (($member.Sid -notlike "*-500") -and ($member.objectClass -eq "user")) #Do not change the build in administrators group membership
-        {
-        if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($member.DistinguishedName -notlike "*,$UserDefaultContainer") -and ($member.distinguishedName -notlike "*,$ManagedUserAccountContainer")){    
-            if ($RemoveUserFromPrivilegedGroups){
-                    Write-Debug "remove $member from $($Group.DistinguishedName)"
-                    Remove-ADGroupMember -Identity $GroupName -Members $member
-                }
-                else {
+        $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($Domain.DnsRoot):3268"
+        if (($member.ObjectSid.Value -notlike "*-500") -and ($member.objectClass -eq "user")){ #Do not change the build in administrators group membership
+            #ignore any user listes in the exclude parameter
+            if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($ExcludeUser -notlike "*$($Domain.NetBIOSName)\$($member.SamAccountName)*")){    
+                if ($RemoveUserFromPrivilegedGroups){
+                Write-Debug "remove $member from $($Group.DistinguishedName)"
+                Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} 
+                } else {
                     Write-Host "Unexpected user $($member.distinguishedName)) found in $Group"
                 }
             }
@@ -108,7 +119,7 @@ function validateAndRemoveUser{
 }
 
 #main program
-$ScriptVersion = 2023052521
+$ScriptVersion = "1.0.20230914"
 Write-Output "Tier 0 user management version $scriptVersion"
 
 #region setting variables default values
