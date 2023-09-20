@@ -27,19 +27,18 @@ possibility of such damages
 
 .EXAMPLE
 	.\T0usermgmt.ps1 $true
-.INPUTS
-    -RemoveUserFromPrivilegedGroups [$true|$false]
+.PARAMETER RemoveUserFromPrivilegedGroups [$true|$false]
         If this paramter is set to $true users are not on the Tier 0 OU or in the AD default users container will be removed from privileged groups
         if this parameter is set to $false groups will beno be changed
-    -PrivilegedOUPath
+.PARAMETER PrivilegedOUPath 
         is the DistinguishedName of the Tier 0 OU
-    -Tier0UserGroupName   
+.PARAMETER Tier0UserGroupName   
         is the name of the Tier 0 Deny user group
-    -KerberosPolicyName
+.PARAMETER KerberosPolicyName
         Is the name of the Kerberos authentication policy
-    -PrivilegedServiceAccountOUPath
+.PARAMETER PrivilegedServiceAccountOUPath
         is the distinguisehdname of the Tier 0 service accounts
-    -excludeusers
+.PARAMETER ExcludeUsers
         a list ob users who will not be removed from the privileged groups
 
 .OUTPUTS
@@ -56,6 +55,8 @@ possibility of such damages
         Version numbering changed
         users from child will be removed if they are in a privileged group
         new parameter introduced -excludeusers is a list of users who will be ignored by the script
+    1.0.20230920
+        write output if users removed from a privileged group
 #>
 <#
     script parameters
@@ -77,7 +78,7 @@ param (
 	#Name of the Tier 0 users group
 	[Parameter(Mandatory=$false)]
 	[string]
-	$Tier0UserGroupName,
+	$Tier0UserGroupName = "T0 - All Users",
     #Is the name of the KerberosAuthentication Policy
 	[Parameter(Mandatory=$false)]
 	[string]
@@ -89,6 +90,15 @@ param (
 
 )
 
+<#
+.SYNOPSIS
+    Remove unexpected user to the privileged group 
+.DESCRIPTION 
+    Searches for users in privileged groups and remove those user if the are not 
+    - in the correct OU
+    - the built-In Administrator
+
+#>
 function validateAndRemoveUser{
     param(
         [string] $SID
@@ -108,10 +118,10 @@ function validateAndRemoveUser{
             #ignore any user listes in the exclude parameter
             if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($ExcludeUser -notlike "*$($Domain.NetBIOSName)\$($member.SamAccountName)*")){    
                 if ($RemoveUserFromPrivilegedGroups){
-                Write-Debug "remove $member from $($Group.DistinguishedName)"
+                Write-Host "remove $member from $($Group.DistinguishedName)"
                 Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} 
                 } else {
-                    Write-Host "Unexpected user $($member.distinguishedName)) found in $Group"
+                    Write-Output "Unexpected user $($member.distinguishedName)) found in $Group"
                 }
             }
         }
@@ -119,20 +129,18 @@ function validateAndRemoveUser{
 }
 
 #main program
-$ScriptVersion = "1.0.20230914"
+$ScriptVersion = "1.0.20230920"
 Write-Output "Tier 0 user management version $scriptVersion"
 
 #region setting variables default values
 if($PrivilegedOUPath -eq ""){ 
-    $PrivilegedOUPath = "OU=Tier 0 - Accounts,OU=Admin," + (Get-ADDomain).DistinguishedName
+    $PrivilegedOUPath = "OU=Tier 0 - User Privileged,OU=Admin," + (Get-ADDomain).DistinguishedName
 }
 
 if ($PrivilegedServiceAccountOUPath -eq ""){
     $PrivilegedServiceAccountOUPath = "OU=Tier 0 - Service Accounts,OU=Admin,$((Get-ADDomain).DistinguishedName)" 
 }
-if ($Tier0UserGroupName -eq ""){
-    $Tier0UserGroupName = "T0 - All Users"
-}
+
 if ($KerberosPolicyName -eq ""){ 
     $KerberosPolicyName = "Tier 0 Logon Restriction"
 }
@@ -165,9 +173,9 @@ if ($null -eq (Get-ADOrganizationalUnit -Filter {DistinguishedName -eq $Privileg
 #region Validate the group membership and authentication policy settings in the Tier 0 OU 
 foreach ($user in Get-ADUser -SearchBase $PrivilegedOUPath -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf){
 	#validate the user is member of the Tier 0 users group
-	if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
-		Add-ADGroupMember $Tier0UserGroupName $user
-    }
+        if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
+		    Add-ADGroupMember $Tier0UserGroupName $user
+        }
 	#validate the Kerberos Authentication policy is assigned to the user
 	if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
         Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName}

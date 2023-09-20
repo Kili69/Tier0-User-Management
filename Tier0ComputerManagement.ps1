@@ -41,11 +41,11 @@ Param (
     #Sam account name of the Tier 0 computer group
     [Parameter (Mandatory=$false)]
     [String]
-    $T0SamAccountName ="T0computers",
+    $T0SamAccountName,
     # OU Path for Tier 0 computer
     [Parameter(Mandatory=$false)]
     [string]
-    $T0OU ="OU=BG-T0,DC=bloedgelaber,dc=de"
+    $T0OU 
 )
 
 #searching for the T0 computers group
