@@ -27,51 +27,71 @@ possibility of such damages
 	.\Tier0ComputerManagement.ps1
 .INPUTS
     -Tier0ComputerGroupName
+        The SAM account name of the Tier 0 computers group
     -Tier0OU
+        The relative name of the Tier 0 OU without the domain DN
 
 .OUTPUTS
    none
 .NOTES
     Version Tracking
-    20230918
-    Initial Version available on GitHub
+    0.1.20230918
+        Initial Version available on GitHub
+    0.1.20231020
+        Mulit-Domain Forest support.
+            If the parameter $MulitDomainForest is enabled all computer objects from any domain in the forest will be added to the Tier 0 computer group
+    
 #>
 [CmdletBinding()]
 Param (
     #Sam account name of the Tier 0 computer group
     [Parameter (Mandatory=$false)]
     [String]
-    $T0SamAccountName,
+    $T0SamAccountName = "Tier 0 Computers",
     # OU Path for Tier 0 computer
     [Parameter(Mandatory=$false)]
     [string]
-    $T0OU 
+    $T0OU = "OU=Tier 0 - Computers,OU=Admin",
+    [Parameter (Mandatory=$false)]
+    [bool]
+    $MulitDomainForest = $true
 )
 
+#for compatibility reason the Domain component will be removed from the OU path
+$T0OU = [regex]::Replace($T0OU,",DC=.+","")
 #searching for the T0 computers group
 $adoGroup = Get-ADObject -Filter {(SamaccountName -eq $T0SamAccountName) -and (Objectclass -eq "Group")} -Properties member
 if ($null -eq $adoGroup){
     Write-Host "can't find a group $T0SamAccountName "
     break
 }
-#validate the Tier 0 OU path
-if ($null -eq (Get-ADObject -Filter {DistinguishedName -eq $T0OU})){
-    Write-Host "can't find the Tier 0 OU $T0Ou"
-    break
+
+if ($MulitDomainForest -eq $false){
+    $domains = (Get-ADDomain).DNSRoot
+} else {
+    $domains = (Get-ADForest).Domains
 }
 
-$T0computers = Get-ADComputer -Filter * -SearchBase $T0OU
-#validate the computer ain the Tier 0 OU are member of the tier 0 computers group
-Foreach ($T0Computer in $T0computers){
-    if ($adoGroup.member -notcontains $T0Computer ){
-        Add-ADGroupMember -Identity $adoGroup -Members $T0Computer
+Foreach ($domain in $domains){
+    #validate the Tier 0 OU path
+    if ($null -eq (Get-ADObject "$T0OU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Server $domain)){
+        Write-Host "can't find the Tier 0 OU $T0Ou"
+        break
+    }
+    $T0computers = Get-ADComputer -Filter * -SearchBase "$T0OU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Server $domain
+    #$T0computers  = Get-ADObject -Filter {ObjectClass -eq "Computer"} -SearchBase "$T0OU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Properties ObjectSid -SearchScope Subtree -Server $domain
+    #validate the computer ain the Tier 0 OU are member of the tier 0 computers group
+    Foreach ($T0Computer in $T0computers){
+        if ($adoGroup.member -notcontains $T0Computer ){
+            Add-ADGroupMember -Identity $adoGroup -Members $T0Computer
+        }
     }
 }
 #remove any object from Tier 0 computer group who is not member of the tier 0 computers list
-$adoGroup = Get-ADObject -Filter {(SamaccountName -eq $T0SamAccountName) -and (Objectclass -eq "Group")} -Properties member
-foreach ($GroupMember in $adoGroup.member){
-    if ($null -eq ($T0computers | Where-Object {$_.DistinguishedName -contains $GroupMember})){
-        Remove-ADGroupMember -Identity $adoGroup -Members $GroupMember -Confirm:$false
+Foreach ($member in (Get-ADGroupMember $T0SamAccountName)){
+    if ($member.DistinguishedName -notlike "*$T0OU*"){
+        Remove-ADGroupMember -Identity $T0SamAccountName -Members $member -Confirm:$false
     }
 }
+
 
