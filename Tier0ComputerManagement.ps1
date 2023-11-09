@@ -43,6 +43,7 @@ possibility of such damages
     0.1.20231109
         Writes events to the Application event log
         Rename of the script parameters
+        if the group is not accesible the script exist with the error code 0x3E8
     
 #>
 [CmdletBinding()]
@@ -64,8 +65,8 @@ $Tier0ComputerOU = [regex]::Replace($Tier0ComputerOU,",DC=.+","")
 $adoGroup = Get-ADObject -Filter {(SamaccountName -eq $Tier0ComputerGroupName) -and (Objectclass -eq "Group")} -Properties member
 if ($null -eq $adoGroup){
     Write-Host "Tier 0 computer management: Can't find the group $Tier0ComputerGroupName in the current domain. Script aborted" -ForegroundColor Red
-    Write-Eventlog -LogName "Application" -Source "Application" -EventId 1 -EntryType Error -Category 1 -Message "Tier 0 computer management: Can't find the group $Tier0ComputerGroupName in the current domain. Script aborted"
-    return
+    Write-Eventlog -LogName "Application" -Source "Application" -EventId 1000 -EntryType Error -Category 1 -Message "Tier 0 computer management: Can't find the group $Tier0ComputerGroupName in the current domain. Script aborted"
+    exit 0x3E8
 }
 
 if ($MulitDomainForest -eq $false){
