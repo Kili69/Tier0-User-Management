@@ -1,0 +1,23 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Tier0ComputerManagement",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceRoot}\\Tier0ComputerManagement.ps1",
+            "cwd": "${workspaceRoot}",
+            "args": ["-Tier0ComputerGroupName 'Tier 0 Computers' -Tier0ComputerOU 'OU=Tier 0 - Computers,OU=Admin'"]
+        },
+        {
+            "name": "Launch Current File",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${file}",
+            "args": []
+        }
+    ]
+}

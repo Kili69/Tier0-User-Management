@@ -40,30 +40,32 @@ possibility of such damages
     0.1.20231020
         Mulit-Domain Forest support.
             If the parameter $MulitDomainForest is enabled all computer objects from any domain in the forest will be added to the Tier 0 computer group
+    0.1.20231109
+        Writes events to the Application event log
+        Rename of the script parameters
     
 #>
 [CmdletBinding()]
 Param (
-    #Sam account name of the Tier 0 computer group
+    [Parameter (Mandatory=$true, Position = 0)]
+    #Name of the group who contains all Tier 0 computers
+    [String]$Tier0ComputerGroupName,
+    [Parameter(Mandatory=$true, Position = 1)]
+    # DistinguishedName of the OU for Tier 0 computer
+    [string]$Tier0ComputerOU = "OU=Tier 0 - Computers,OU=Admin",
     [Parameter (Mandatory=$false)]
-    [String]
-    $T0SamAccountName = "Tier 0 Computers",
-    # OU Path for Tier 0 computer
-    [Parameter(Mandatory=$false)]
-    [string]
-    $T0OU = "OU=Tier 0 - Computers,OU=Admin",
-    [Parameter (Mandatory=$false)]
-    [bool]
-    $MulitDomainForest = $true
+    #Enable the multidomain mode
+    [bool]$MulitDomainForest = $true
 )
 
 #for compatibility reason the Domain component will be removed from the OU path
-$T0OU = [regex]::Replace($T0OU,",DC=.+","")
+$Tier0ComputerOU = [regex]::Replace($Tier0ComputerOU,",DC=.+","")
 #searching for the T0 computers group
-$adoGroup = Get-ADObject -Filter {(SamaccountName -eq $T0SamAccountName) -and (Objectclass -eq "Group")} -Properties member
+$adoGroup = Get-ADObject -Filter {(SamaccountName -eq $Tier0ComputerGroupName) -and (Objectclass -eq "Group")} -Properties member
 if ($null -eq $adoGroup){
-    Write-Host "can't find a group $T0SamAccountName "
-    break
+    Write-Host "Tier 0 computer management: Can't find the group $Tier0ComputerGroupName in the current domain. Script aborted" -ForegroundColor Red
+    Write-Eventlog -LogName "Application" -Source "Application" -EventId 1 -EntryType Error -Category 1 -Message "Tier 0 computer management: Can't find the group $Tier0ComputerGroupName in the current domain. Script aborted"
+    return
 }
 
 if ($MulitDomainForest -eq $false){
@@ -71,27 +73,42 @@ if ($MulitDomainForest -eq $false){
 } else {
     $domains = (Get-ADForest).Domains
 }
-
+$bGroupMemberchanged = $false
 Foreach ($domain in $domains){
     #validate the Tier 0 OU path
-    if ($null -eq (Get-ADObject "$T0OU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Server $domain)){
-        Write-Host "can't find the Tier 0 OU $T0Ou"
-        break
-    }
-    $T0computers = Get-ADComputer -Filter * -SearchBase "$T0OU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Server $domain
-    #$T0computers  = Get-ADObject -Filter {ObjectClass -eq "Computer"} -SearchBase "$T0OU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Properties ObjectSid -SearchScope Subtree -Server $domain
-    #validate the computer ain the Tier 0 OU are member of the tier 0 computers group
-    Foreach ($T0Computer in $T0computers){
-        if ($adoGroup.member -notcontains $T0Computer ){
-            Add-ADGroupMember -Identity $adoGroup -Members $T0Computer
+    if ($null -eq (Get-ADObject "$Tier0ComputerOU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Server $domain)){
+        Write-Host "Missing the Tier 0 computer OU $Tier0ComputerOU,$((Get-ADDomain -Server $domain).DistinguishedName)" -ForegroundColor Red
+        Write-EventLog -LogName "Application" -source "Application" -EventId 0 -EntryType Error -Message "Missing the Tier 0 computer OU $Tier0ComputerOU,$((Get-ADDomain -Server $domain).DistinguishedName)"
+    } else{
+        $T0computers = Get-ADObject -Filter {ObjectClass -eq "Computer"} -SearchBase "$Tier0ComputerOU,$((Get-ADDomain -Server $domain).DistinguishedName)" -Properties ObjectSid -SearchScope Subtree -Server $domain
+        #validate the computer ain the Tier 0 OU are member of the tier 0 computers group
+        Foreach ($T0Computer in $T0computers){
+            if ($adoGroup.member -notcontains $T0Computer ){
+                $adoGroup.member += $T0Computer.DistinguishedName
+                $bGroupMemberchanged = $true
+                Write-Host "Added $T0computer to $adoGroup" -ForegroundColor Yellow
+                Write-EventLog -LogName "Application" -source "Application" -EventID 0 -EntryType information -Message "Added $T0Computer to $adoGroup"
+            }
         }
     }
 }
+if ($bGroupMemberchanged){
+    Set-ADObject -Instance $adoGroup    
+    $bGroupMemberchanged = $false
+}
 #remove any object from Tier 0 computer group who is not member of the tier 0 computers list
-Foreach ($member in (Get-ADGroupMember $T0SamAccountName)){
-    if ($member.DistinguishedName -notlike "*$T0OU*"){
-        Remove-ADGroupMember -Identity $T0SamAccountName -Members $member -Confirm:$false
+$updatedGroupMembers = @()
+Foreach ($member in ($adoGroup.member)){
+    if ($member -like "*$Tier0ComputerOU*"){
+        $updatedGroupMembers += $member
+    } else {
+        #Remove-ADGroupMember -Identity $Tier0ComputerGroupName -Members $member -Confirm:$false
+        Write-Host "Unexpected computer object $member removed from $($adoGroup.DistinguishedName)" -ForegroundColor Yellow
+        Write-EventLog -LogName "Application" -source "Application" -EventID 0 -EntryType Warning -Message "Unexpected computer object $member removed from $($adoGroup.DistinguishedName)"
+        $bGroupMemberchanged = $true
     }
 }
-
-
+if ($bGroupMemberchanged){
+    $adoGroup.member = $updatedGroupMembers
+    Set-ADObject -Instance $adoGroup
+}
