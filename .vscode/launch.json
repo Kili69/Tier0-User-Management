@@ -5,12 +5,28 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Tier0ComputerManagement",
+            "name": "Tier0ComputerManagement default usage",
             "type": "PowerShell",
             "request": "launch",
             "script": "${workspaceRoot}\\Tier0ComputerManagement.ps1",
             "cwd": "${workspaceRoot}",
             "args": ["-Tier0ComputerGroupName 'Tier 0 Computers' -Tier0ComputerOU 'OU=Tier 0 - Computers,OU=Admin'"]
+        },
+        {
+            "name": "Tier0ComputerManagement no subdomains",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceRoot}\\Tier0ComputerManagement.ps1",
+            "cwd": "${workspaceRoot}",
+            "args": ["-Tier0ComputerGroupName 'Tier 0 Computers' -Tier0ComputerOU 'OU=Tier 0 - Computers,OU=Admin' -MultiForest $False"]
+        },
+        {
+            "name": "Tier0ComputerManagement multiple OUs",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceRoot}\\Tier0ComputerManagement.ps1",
+            "cwd": "${workspaceRoot}",
+            "args": ["-Tier0ComputerGroupName 'Tier 0 Computers' -Tier0ComputerOU 'OU=Tier 0 - Computers,OU=Admin;OU=MyTier0' -MultiForest $False"]
         },
         {
             "name": "Launch Current File",
