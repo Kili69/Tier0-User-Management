@@ -59,6 +59,8 @@ possibility of such damages
         write output if users removed from a privileged group
     1.0.20231113
         enable MulitdomainSupport
+    1.0.2023114
+        Bugfix searching schemaadmins and Enterprise admins only in forest root domain
 #>
 <#
     script parameters
@@ -203,21 +205,26 @@ foreach ($DomainName in $aryDomainName){
         "522" #Cloneable Domain Controllers
     #   "527" #Enterprise Key Admins
     )
-    
-    foreach ($relativeSid in $PrivlegeDomainSid) {
-        validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
+    if ($RemoveUserFromPrivilegedGroups){
+        foreach ($relativeSid in $PrivlegeDomainSid) {
+            validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
+        }
+        #Backup Operators
+        validateAndRemoveUser -SID "S-1-5-32-551" -DomainDNSName $DomainName
+        #Print Operators
+        validateAndRemoveUser -SID "S-1-5-32-550" -DomainDNSName $DomainName
+        #Server Operators
+        validateAndRemoveUser -SID "S-1-5-32-549" -DomainDNSName $DomainName
+        #Server Operators
+        validateAndRemoveUser -SID "S-1-5-32-548" -DomainDNSName $DomainName
+        #Administrators
+        validateAndRemoveUser -SID "S-1-5-32-544" -DomainDNSName $DomainName
     }
-
-    #Backup Operators
-    validateAndRemoveUser -SID "S-1-5-32-551" -DomainDNSName $DomainName
-    #Print Operators
-    validateAndRemoveUser -SID "S-1-5-32-550" -DomainDNSName $DomainName
-    #Server Operators
-    validateAndRemoveUser -SID "S-1-5-32-549" -DomainDNSName $DomainName
-    #Server Operators
-    validateAndRemoveUser -SID "S-1-5-32-548" -DomainDNSName $DomainName
-    #Administrators
-    validateAndRemoveUser -SID "S-1-5-32-544" -DomainDNSName $DomainName
-
 #endregion
+}
+if ($RemoveUserFromPrivilegedGroups){
+    $forestDNS = (Get-ADDomain).Forest
+    $forestSID = (Get-ADDomain -Server $forestDNS).DomainSID.Value
+    validateAndRemoveUser -SID "$forestSID-518" -DomainDNSName $forestDNS
+    validateAndRemoveUser -SID "$forestSID-519" -DomainDNSName $forestDNS
 }
