@@ -197,16 +197,17 @@ foreach ($DomainName in $aryDomainName){
     #Well-known critical domain group relative domain sid
     $PrivlegeDomainSid = @(
         "512", #Domain Admins
-        "518", #Schema Admins
-        "519", #"Enterprise Admins"
+        #"518", #Schema Admins
+        #"519", #"Enterprise Admins"
         "520", #Group Policy Creator Owner
         "522" #Cloneable Domain Controllers
     #   "527" #Enterprise Key Admins
     )
-
+    
     foreach ($relativeSid in $PrivlegeDomainSid) {
         validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
     }
+
     #Backup Operators
     validateAndRemoveUser -SID "S-1-5-32-551" -DomainDNSName $DomainName
     #Print Operators

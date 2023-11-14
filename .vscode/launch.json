@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "PowerShell T0UserManagement.ps1 Tier0Computer 'OU=Tier 0,OU=Admin' ",
+            "name": "PowerShell T0UserManagement.ps1 Tier0Computer 'OU=Tier 0,OU=Admin' -",
             "type": "PowerShell",
             "request": "launch",
             "script": "${workspaceRoot}\\Tier0UserManagement.ps1",
