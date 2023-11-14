@@ -57,6 +57,8 @@ possibility of such damages
         new parameter introduced -excludeusers is a list of users who will be ignored by the script
     1.0.20230920
         write output if users removed from a privileged group
+    1.0.20231113
+        enable MulitdomainSupport
 #>
 <#
     script parameters
@@ -78,7 +80,7 @@ param (
 	#Name of the Tier 0 users group
 	[Parameter(Mandatory=$false)]
 	[string]
-	$Tier0UserGroupName = "T0 - All Users",
+	$Tier0UserGroupName,
     #Is the name of the KerberosAuthentication Policy
 	[Parameter(Mandatory=$false)]
 	[string]
@@ -86,7 +88,10 @@ param (
     #users of domain admins which should be disabled by the script
     [Parameter (Mandatory=$false)]
     [string]
-    $ExcludeUser
+    $ExcludeUser,
+    #Enable mulitdomain support to add all tier 0 users into a single Kerberos Authenticatin Policy
+    [Parameter(Mandatory=$false)]
+    [switch] $EnableMulitDomainSupport
 
 )
 
@@ -101,25 +106,32 @@ param (
 #>
 function validateAndRemoveUser{
     param(
-        [string] $SID
+        #The SID uof the group
+        [string] $SID,
+        #The DNS domain Name
+        [string] $DomainDNSName
     )
-    $Group = Get-ADGroup -Identity $SID -Properties members
-    $Domain = Get-ADDomain
+    $Group = Get-ADGroup -Identity $SID -Properties members -Server $DomainDNSName
     #validate the SID exists
     if ($null -eq $Group){
-        Write-Debug "$SID not found"
+        Write-Output "$SID not found"
         return
     }
 
     foreach ($Groupmember in $Group.members)
     {
-        $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($Domain.DnsRoot):3268"
+        $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($DomainDNSName):3268"
         if (($member.ObjectSid.Value -notlike "*-500") -and ($member.objectClass -eq "user")){ #Do not change the build in administrators group membership
             #ignore any user listes in the exclude parameter
-            if (($member.distinguishedName -notlike "*,$PrivilegedOUPath") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath") -and ($ExcludeUser -notlike "*$($Domain.NetBIOSName)\$($member.SamAccountName)*")){    
+            if (($member.distinguishedName -notlike "*,$PrivilegedOUPath*") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ($excludeUser -notcontains $member )){    
                 if ($RemoveUserFromPrivilegedGroups){
-                Write-Host "remove $member from $($Group.DistinguishedName)"
-                Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} 
+                    try{
+                        Write-Host "remove $member from $($Group.DistinguishedName)"
+                        Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} 
+                    }
+                    catch{
+                        Write-Output ""
+                    }
                 } else {
                     Write-Output "Unexpected user $($member.distinguishedName)) found in $Group"
                 }
@@ -129,88 +141,82 @@ function validateAndRemoveUser{
 }
 
 #main program
-$ScriptVersion = "1.0.20230920"
+$ScriptVersion = "1.0.20231113"
 Write-Output "Tier 0 user management version $scriptVersion"
 
 #region setting variables default values
 if($PrivilegedOUPath -eq ""){ 
-    $PrivilegedOUPath = "OU=Tier 0 - User Privileged,OU=Admin," + (Get-ADDomain).DistinguishedName
-}
-
-if ($PrivilegedServiceAccountOUPath -eq ""){
-    $PrivilegedServiceAccountOUPath = "OU=Tier 0 - Service Accounts,OU=Admin,$((Get-ADDomain).DistinguishedName)" 
+    #$PrivilegedOUPath = "OU=Tier 0 - User Privileged,OU=Admin," + (Get-ADDomain).DistinguishedName
+    Write-Output 'Missing relative Tier 1 OU path. Example Tier0UserManagement.ps1 -PrivilegedOUPath "OU=Tier 0,OU=Admin'
+    exit 0x3E8
 }
 
 if ($KerberosPolicyName -eq ""){ 
-    $KerberosPolicyName = "Tier 0 Logon Restriction"
+    Write-Output 'Missing Kerberos Authentication Policy name. Example .\Tier0UserManagement.ps1 -KerberosPolicyName "Tier 0 Logon Restriction"'
+    #$KerberosPolicyName = "Tier 0 Logon Restriction"
+    exit 0x3E9
 }
 
 #region Parameter validation
-#Validate the Tier 0 group is available
-$Tier0UsersGroup = Get-ADGroup -Identity $Tier0UserGroupName
-if ($null -eq $Tier0UsersGroup){
-    Write-Host "$Tier0GroupName not found"
-    exit 0xA2
-}
 #Validate the Kerboers Authentication policy exists
 $KerberosAuthenticationPolicy = Get-ADAuthenticationPolicy -Filter {Name -eq $KerberosPolicyName}
 if ($null -eq $KerberosAuthenticationPolicy){
     Write-Host "$KerberosPolicyName not found"
     exit 0xA3
 }
-#Validate the Tier 0 users OU exists
-if ($null -eq (Get-ADOrganizationalUnit -Filter {DistinguishedName -eq $PrivilegedOUPath})){
-    Write-Output "Tier 0 OU $PrivilegedOUPath not available"
-    exit 0xA4
+#enumerate the target domains
+$aryDomainName = @()
+if ($EnableMulitDomainSupport){
+    #MulitdomainSupport is enabled get all forest domains
+    $aryDomainName += (Get-ADForest).Domains
+} else {
+    $aryDomainName += (Get-ADDomain).DNSRoot
 }
-#Validate the Tier 0 service OU exists
-if ($null -eq (Get-ADOrganizationalUnit -Filter {DistinguishedName -eq $PrivilegedServiceAccountOUPath})){
-    Write-Output "Service Account OU $PrivilegedServiceAccountOUPath not available"
-    exit 0xA5
-}
-#endregion
-
-#region Validate the group membership and authentication policy settings in the Tier 0 OU 
-foreach ($user in Get-ADUser -SearchBase $PrivilegedOUPath -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf){
-	#validate the user is member of the Tier 0 users group
-        if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
-		    Add-ADGroupMember $Tier0UserGroupName $user
+foreach ($DomainName in $aryDomainName){
+    #region Validate the group membership and authentication policy settings in the Tier 0 OU 
+    foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf -SearchScope Subtree -Server $DomainName){
+	    #validate the user is member of the Tier 0 users group
+        if ($Tier0UserGroupName -ne ""){
+            if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
+		        Add-ADGroupMember $Tier0UserGroupName $user
+            }
         }
-	#validate the Kerberos Authentication policy is assigned to the user
-	if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
-        Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName}
-}
-foreach ($user in Get-ADUser -SearchBase $PrivilegedServiceAccountOUPath -Filter * -Properties memberOf){
-    if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
-        Add-GroupMember $Tier0UserGroupName $user
+	    #validate the Kerberos Authentication policy is assigned to the user
+	    if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
+            try {
+                Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName                  
+            }
+            catch {
+                Write-Output "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName) $($Error[0])"
+            }
+        }
     }
-}
-#endregion
+    #endregion
 
-#region validate Critical Group Membership
-#Well-known critical domain group relative domain sid
-$PrivlegeDomainSid = @(
-    "512", #Domain Admins
-    "518", #Schema Admins
-    "519", #"Enterprise Admins"
-    "520", #Group Policy Creator Owner
-    "522" #Cloneable Domain Controllers
-#    "527" #Enterprise Key Admins
-    
-)
+    #region validate Critical Group Membership
+    #Well-known critical domain group relative domain sid
+    $PrivlegeDomainSid = @(
+        "512", #Domain Admins
+        "518", #Schema Admins
+        "519", #"Enterprise Admins"
+        "520", #Group Policy Creator Owner
+        "522" #Cloneable Domain Controllers
+    #   "527" #Enterprise Key Admins
+    )
 
-foreach ($relativeSid in $PrivlegeDomainSid) {
-    validateAndRemoveUser -SID "$((Get-ADDomain).DomainSID)-$RelativeSid"
-}
-#Backup Operators
-validateAndRemoveUser -SID "S-1-5-32-551"
-#Print Operators
-validateAndRemoveUser -SID "S-1-5-32-550"
-#Server Operators
-validateAndRemoveUser -SID "S-1-5-32-549"
-#Server Operators
-validateAndRemoveUser -SID "S-1-5-32-548"
-#Administrators
-validateAndRemoveUser -SID "S-1-5-32-544"
+    foreach ($relativeSid in $PrivlegeDomainSid) {
+        validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
+    }
+    #Backup Operators
+    validateAndRemoveUser -SID "S-1-5-32-551" -DomainDNSName $DomainName
+    #Print Operators
+    validateAndRemoveUser -SID "S-1-5-32-550" -DomainDNSName $DomainName
+    #Server Operators
+    validateAndRemoveUser -SID "S-1-5-32-549" -DomainDNSName $DomainName
+    #Server Operators
+    validateAndRemoveUser -SID "S-1-5-32-548" -DomainDNSName $DomainName
+    #Administrators
+    validateAndRemoveUser -SID "S-1-5-32-544" -DomainDNSName $DomainName
 
 #endregion
+}

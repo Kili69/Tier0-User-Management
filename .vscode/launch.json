@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "PowerShell T0UserManagement.ps1 Tier0Computer 'OU=Tier 0,OU=Admin' ",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceRoot}\\Tier0UserManagement.ps1",
+            "cwd": "${workspaceRoot}",
+            "args": ["-PrivilegedOUPath 'OU=T0-GlobalAdmins,OU=Tier 0,OU=Admin' -KerberosPolicyName 'Tier 0 Restrictions'-PrivilegedServiceAccountOUPath 'OU=Tier 0 - Service Accounts,OU=Admin' -EnableMulitDomainSupport"]
+        },
+        {
             "name": "Tier0ComputerManagement default usage",
             "type": "PowerShell",
             "request": "launch",
