@@ -11,7 +11,7 @@ The downside is that the Kerberos Authentication Policy must be added to each Ti
 
 Run the scripts as a schedule task on every DC in the context of the system every 10 - 30 minutes. 
 
-## CreatekerberosAuthenticatinPolicy.ps1
+## CreatekerberosAuthenticationPolicy.ps1
 This script create Kerberos Authentication policies for Tier 0 or Tier 1 isolation. 
 the script supports the following parameters:
 
