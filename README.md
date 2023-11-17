@@ -11,6 +11,19 @@ The downside is that the Kerberos Authentication Policy must be added to each Ti
 
 Run the scripts as a schedule task on every DC in the context of the system every 10 - 30 minutes. 
 
+## CreatekerberosAuthenticatinPolicy
+This script create Kerberos Authentication policies for Tier 0 or Tier 1 isolation. 
+the script supports the following parameters:
+
+-PolicyName  is the name of the Kerberos Authentication Policy (Default value is "Tier 0 Restrictions"
+
+-Tier0ComputerGroup is the name of the AD group who contains any Tier 0 member server (Default value is "Tier 0 Computers")
+
+-TGTLifeTime is the user TGT life time (Default vlue is 240 minutes)
+
+-Tier1KerberosAuthenticationPolicy use this switch if you creating a Kerberos Authentication Policy for Tier 1 users
+
+
 ## Tier0ComputerManagement.ps1
 
 This script add all computers in the Tier 0 computer OU to a single group. This group can be used in the Claim of the Kerberos Authentication Policy
