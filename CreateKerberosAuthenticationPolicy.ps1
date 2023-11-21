@@ -43,7 +43,7 @@ possibility of such damages
 Param (
     [Parameter (Mandatory=$false, Position = 0)]
     #Name of the Kerberos Authentication Policy
-    [String]$PolicyName = "Tier 0 Restrictions Test",
+    [String]$PolicyName = "Tier 0 Restrictions",
     [Parameter(Mandatory=$false, Position = 1)]
     # The name of the AD group who contains any Tier 0 member server
     [string]$Tier0ComputerGroup = "Tier 0 Computers",

@@ -61,13 +61,15 @@ possibility of such damages
         enable MulitdomainSupport
     1.0.2023114
         Bugfix searching schemaadmins and Enterprise admins only in forest root domain
+    1.0.20231324
+        The script remove any kind of AD objects from the privilege groups even they are not a privileged SID, GMSA, service account or member of excludes users
 #>
 <#
     script parameters
 #>
 [CmdletBinding()]
 param (
-    #If this parameter is $true, users located not in the T0 Users OU automaticaly removed from privileged Groups
+    #If this parameter is $true, users located not in the T0 Users OU automaticaly removed from privileged Groups, service account or a member of the exlude users
     [Parameter(Mandatory=$false)]
     [bool]
     $RemoveUserFromPrivilegedGroups=$true,
@@ -123,27 +125,38 @@ function validateAndRemoveUser{
     foreach ($Groupmember in $Group.members)
     {
         $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($DomainDNSName):3268"
-        if (($member.ObjectSid.Value -notlike "*-500") -and ($member.objectClass -eq "user")){ #Do not change the build in administrators group membership
-            #ignore any user listes in the exclude parameter
-            if (($member.distinguishedName -notlike "*,$PrivilegedOUPath*") -and ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ($excludeUser -notcontains $member )){    
-                if ($RemoveUserFromPrivilegedGroups){
-                    try{
+        #if (($member.ObjectSid.Value -notlike "*-500") -and ($member.objectClass -eq "user") ){ #Do not change the build in administrators group membership
+        if (($member.ObjectSid.value   -notlike "*-500")                              -and ` #ignore if the member is Built-In Administrator
+            ($member.objectSid.value   -notlike "*-512")                              -and ` #ignoer if the member is Domain Admins group
+            ($member.ObjectSid.value   -notlike "*-518")                              -and ` #ignore if the member is Schema Admins
+            ($member.ObjectSid.Value   -notlike "*-519")                              -and ` #ignore if the member is Enterprise Admins
+            ($member.objectSid.Value   -notlike "*-520")                              -and ` #ignore if the member is Group Policy Creator
+            ($member.objectSid.Value   -notlike "*-522")                              -and ` #ignore if the member is cloneable domain controllers
+            ($member.objectSid.Value   -notlike "*-527")                              -and ` #ignore if the member is Enterprise Key Admins
+            ($member.objectClass       -ne "msDS-GroupManagedServiceAccount")         -and ` #ignore if the member is a GMSA
+            ($member.distinguishedName -notlike "*,$PrivilegedOUPath*")               -and ` #ignore if the member is located in the Tier 0 user OU
+            ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ` #ignore if the member is located in the service account OU
+            ($excludeUser -notcontains $member.DistinguishedName )                           #ignoer if the member is in the exclude user list
+            ) {    
+                try{
                         Write-Host "remove $member from $($Group.DistinguishedName)"
-                        Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} 
-                    }
-                    catch{
-                        Write-Output ""
-                    }
-                } else {
-                    Write-Output "Unexpected user $($member.distinguishedName)) found in $Group"
+                        Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} -Server $DomainDNSName
                 }
-            }
+                catch [Microsoft.ActiveDirectory.Management.ADServerDownException]{
+                    Write-Host "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
+                }
+                catch [Microsoft.ActiveDirectory.Management.ADException]{
+                    Write-Host "Cannot remove $($member.DistinguishedName) from $($Group.Distiguishedname) $($Error.Message)"
+                }
+                catch{
+                    Write-Output $Error[0].GetType().Name
+                }
         }
     }
 }
 
 #main program
-$ScriptVersion = "1.0.20231113"
+$ScriptVersion = "1.0.20231121"
 Write-Output "Tier 0 user management version $scriptVersion"
 
 #region setting variables default values
