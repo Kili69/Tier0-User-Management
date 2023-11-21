@@ -38,15 +38,17 @@ possibility of such damages
     Version Tracking
     0.1.20231117
         Initial Version
+    0.1.20231121
+        PolicyName and Tier0COmputerGroup parameters are mandatory
 #>
 [CmdletBinding()]
 Param (
-    [Parameter (Mandatory=$false, Position = 0)]
+    [Parameter (Mandatory=$true, Position = 0)]
     #Name of the Kerberos Authentication Policy
-    [String]$PolicyName = "Tier 0 Restrictions",
-    [Parameter(Mandatory=$false, Position = 1)]
+    [String]$PolicyName,
+    [Parameter(Mandatory=$true, Position = 1)]
     # The name of the AD group who contains any Tier 0 member server
-    [string]$Tier0ComputerGroup = "Tier 0 Computers",
+    [string]$Tier0ComputerGroup,
     [Parameter(Mandatory=$false, Position = 2)]
     # Life time of the Kerberos TGT
     [string]$TGTLifeTime = 240,
