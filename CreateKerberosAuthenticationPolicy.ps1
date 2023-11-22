@@ -31,6 +31,10 @@ possibility of such damages
         A group who contains any Tier 0 computer
     -TGTLifeTime
         The TGT lifetime in minutes
+    -Tier2KerberosAuthenticationPolicy
+        This switch indicate the Kerberos Authentication Policy will be created for Tier 1
+    -Tier1ComputerGorup
+        The name of the Tier 1 computers group
 
 .OUTPUTS
    none
@@ -40,6 +44,8 @@ possibility of such damages
         Initial Version
     0.1.20231121
         PolicyName and Tier0COmputerGroup parameters are mandatory
+    0.1.20231122
+        Change the Kerberos Authentication Policy to allow Tier 1 accounts to logon to Tier 0 computers
 #>
 [CmdletBinding()]
 Param (
@@ -53,17 +59,21 @@ Param (
     # Life time of the Kerberos TGT
     [string]$TGTLifeTime = 240,
     #Use this switch if this is a Tier 1 Kerberos Authentication Policy
-    [switch]$Tier1KerberosAuthenticationPolicy
+    [switch]$Tier1KerberosAuthenticationPolicy,
+    [Parameter(mandatory=$false)]
+    [string]$Tier1ComputerGroupName,
+    [Parameter(mandatory=$false)]
+    [string] $KerberosAuthenticationPolicyDescription = 'This Kerberos Authentication policy used to restrict interactive logon from untrusted computers'
 )
 
-$KerberosAuthenticationPolicyDescription = 'This Kerberos Authentication policy used to restrict interactive logon from untrusted computers'
 
 try {
     $T0GroupSID = (Get-ADGroup -Identity $Tier0ComputerGroup -Properties ObjectSid).ObjectSid.Value
     if ($Tier1KerberosAuthenticationPolicy){
-        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;(Member_of {SID($T0GroupSID)}))"
+        $T1GroupSID = (Get-ADGroup -Identity $Tier1ComputerGroupName -Properties ObjectSid).ObjectSid.Value
+        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID($T0GroupSID)})|| (Member_of {SID($T1GroupSID)})))"
     } else {
-        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)}) || (Member_of {SID($T0GroupSID)})))"
+        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of {SID($T0GroupSID)})))"
     }
     
     New-ADAuthenticationPolicy -Name $PolicyName -Enforce -RollingNTLMSecret Required `
@@ -76,7 +86,7 @@ try {
                                
 }
 catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
-    Write-Host "Tier 0 computer group doesn't exist. Script aborted" -ForegroundColor Red 
+    Write-Host "Can't find group $($Error[0].CategoryInfo.TargetName). Script aborted" -ForegroundColor Red 
 }
 catch [System.UnauthorizedAccessException]{
     Write-Host "Enterprise Administrator Privileges required $($Error[0].Exception.Message)" -ForegroundColor Red

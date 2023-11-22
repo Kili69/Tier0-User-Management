@@ -5,6 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "CreateKerberosAuthenticationPolicy for Tier 0",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceRoot}\\CreateKerberosAuthenticationPolicy.ps1",
+            "cwd": "${workspaceRoot}",
+            "args": ["-PolicyName 'Test2' -Tier0ComputerGroup 'Tier 0 Computers'"]
+        },
+        {
+            "name": "CreateKerberosAuthenticationPolicy for Tier 1",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceRoot}\\CreateKerberosAuthenticationPolicy.ps1",
+            "cwd": "${workspaceRoot}",
+            "args": ["-PolicyName 'Test2' -Tier0ComputerGroup 'Tier 0 Computers' -Tier1ComputerGroupName 'Tier 1 Computers' -Tier1KerberosAuthenticationPolicy"]
+        },
+        {
             "name": "PowerShell T0UserManagement.ps1 Tier0Computer 'OU=Tier 0,OU=Admin' -",
             "type": "PowerShell",
             "request": "launch",
