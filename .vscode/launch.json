@@ -26,7 +26,7 @@
             "request": "launch",
             "script": "${workspaceRoot}\\Tier0UserManagement.ps1",
             "cwd": "${workspaceRoot}",
-            "args": ["-PrivilegedOUPath 'OU=T0-GlobalAdmins,OU=Tier 0,OU=Admin' -KerberosPolicyName 'Tier 0 Restrictions'-PrivilegedServiceAccountOUPath 'OU=Tier 0 - Service Accounts,OU=Admin' -EnableMulitDomainSupport"]
+            "args": ["-PrivilegedOUPath 'OU=T0-GlobalAdmins,OU=Tier 0,OU=Admin' -KerberosPolicyName 'Tier 0 Restrictions'-PrivilegedServiceAccountOUPath 'OU=Tier 0 - Service Accounts,OU=Admin' -EnableMulitDomainSupport" -whthif]
         },
         {
             "name": "Tier0ComputerManagement default usage",

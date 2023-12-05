@@ -55,8 +55,10 @@ possibility of such damages
     Version Tracking
     0.1.20231117
         Initial Version
+    0.1.20231124
+        The script support the WhatIf parameter
 #>
-[CmdletBinding()]
+[cmdletbinding(SupportsShouldProcess=$true)]
 Param (
     [Parameter (Mandatory=$true, Position = 0)]
     #Name of the group who contains all Tier 0 computers
@@ -74,7 +76,7 @@ Param (
 )
 
 #script Version 
-$_ScriptVersion = "0.1.20231117"
+$_ScriptVersion = "0.1.20231124"
 #region Parameter validation
 #check the AD Module is available. If the AD Module is missing exit the scirpt with error code 0x3E8
 Write-Host "$($MyInvocation.ScriptName) Script Version $_ScriptVersion" -ForegroundColor Yellow

@@ -56,9 +56,11 @@ possibility of such damages
         The script support multiple OUs if they are separeated with a ";" in the $Tier0ComputerOU
         Excpetion handling if a webservice of a domain is down
         if the group cannot be updated, the script exit code is 0x3E9
+    0.1.20231124
+        The script support the WhafIf parameter
     
 #>
-[CmdletBinding()]
+[cmdletbinding(SupportsShouldProcess=$true)]
 Param (
     [Parameter (Mandatory=$true, Position = 0)]
     #Name of the group who contains all Tier 0 computers

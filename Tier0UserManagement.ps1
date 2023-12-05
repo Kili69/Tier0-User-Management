@@ -25,8 +25,6 @@ possibility of such damages
     if they are not located in the Tier 0 users OU, Tier 0 service account ou, in the users container or in the group management service account container. 
     Ther Tier 0 Kerberos Authentication Policy will be automatically atted to sers located in the Tier 0 User OU, but not for service acocunts and GMSA
 
-.EXAMPLE
-	.\T0usermgmt.ps1 $true
 .PARAMETER RemoveUserFromPrivilegedGroups [$true|$false]
         If this paramter is set to $true users are not on the Tier 0 OU or in the AD default users container will be removed from privileged groups
         if this parameter is set to $false groups will beno be changed
@@ -38,11 +36,20 @@ possibility of such damages
         Is the name of the Kerberos authentication policy
 .PARAMETER PrivilegedServiceAccountOUPath
         is the distinguisehdname of the Tier 0 service accounts
-.PARAMETER ExcludeUsers
+.PARAMETER ExcludeUser
         a list ob users who will not be removed from the privileged groups
+.PARAMETER RemoveUserFromPrivilegedGroups
+        if this paraemter is $false users will not be removed from privileged default groups
+        if this parameter is $true (Default) users outside of the PrivilegedServiceAccountOUPath and not mentioned in the ExcludeUser
+        will be removed from Administrators, Domain Admins, Backup Operators, Server managers, Account opertors
+.PARAMETER EnableMulitDomainSupport
+        the script wil manage all privileged users / groups in every domain of the forest. Take care the user has the required rights
+        in the child domains
 
 .OUTPUTS
    none
+.EXAMPLE
+    Tier0UserManagement.ps1 -PrivilegedOUPath "OU=Privileged Accounts,OU=Tier 0,OU=Admin" -KerberosPolicyName "Tier 0 Isolation" -PrivilegedServiceAcocuntOU "OU=service accounts,OU=Tier 0,OU=Admin"  -EnableMultiDomainSupport
 .NOTES
     Version Tracking
     2021-10-29
@@ -63,41 +70,39 @@ possibility of such damages
         Bugfix searching schemaadmins and Enterprise admins only in forest root domain
     1.0.20231324
         The script remove any kind of AD objects from the privilege groups even they are not a privileged SID, GMSA, service account or member of excludes users
+    1.0.20231124
+        The script catches now errors if a user ADIdentityNotFoundException if a userobject cannot read from the privileged OU
+        The script support the WhatIf parameter
+    1.0.20231205
+        PrivilegedOUPath, PrivilegedServiceAcocuntOUPath and KerberosAuthenticationPolicyName are mandatory
+        exit code 0x3E8 and 0x3E9 deprecated
 #>
-<#
-    script parameters
-#>
-[CmdletBinding()]
+[cmdletbinding(SupportsShouldProcess=$true)]
 param (
     #If this parameter is $true, users located not in the T0 Users OU automaticaly removed from privileged Groups, service account or a member of the exlude users
     [Parameter(Mandatory=$false)]
-    [bool]
-    $RemoveUserFromPrivilegedGroups=$true,
+    [bool]$RemoveUserFromPrivilegedGroups=$true,
     #Is the OU Path for T0 Users
-    [Parameter(Mandatory=$false)]
-	[string]
-	$PrivilegedOUPath,
+    [Parameter(Mandatory=$true)]
+	[string]$PrivilegedOUPath,
     #Is the OU path for T0 user accounts
-    [Parameter(Mandatory=$false)]
-    [string]
-    $PrivilegedServiceAccountOUPath,
+    [Parameter(Mandatory=$true)]
+    [string]$PrivilegedServiceAccountOUPath,
 	#Name of the Tier 0 users group
 	[Parameter(Mandatory=$false)]
-	[string]
-	$Tier0UserGroupName,
+	[string]$Tier0UserGroupName,
     #Is the name of the KerberosAuthentication Policy
-	[Parameter(Mandatory=$false)]
-	[string]
-	$KerberosPolicyName,
+	[Parameter(Mandatory=$true)]
+	[string]$KerberosPolicyName,
     #users of domain admins which should be disabled by the script
     [Parameter (Mandatory=$false)]
-    [string]
-    $ExcludeUser,
+    [string]$ExcludeUser,
     #Enable mulitdomain support to add all tier 0 users into a single Kerberos Authenticatin Policy
     [Parameter(Mandatory=$false)]
-    [switch] $EnableMulitDomainSupport
+    [switch]$EnableMulitDomainSupport
 
 )
+
 
 <#
 .SYNOPSIS
@@ -106,9 +111,16 @@ param (
     Searches for users in privileged groups and remove those user if the are not 
     - in the correct OU
     - the built-In Administrator
+.PARAMETER SID
+    - is the SID of the AD group
+.PARAMETER DomainDNSName
+    -is the domain DNS name of the AD object
+.EXAMPLE
+    validateAndRemoveUser -SID "S-1-5-<domain sid>-<group sid>" -DomainDNS contoso.com
 
 #>
 function validateAndRemoveUser{
+    [CmdletBinding(SupportsShouldProcess=$true)]
     param(
         #The SID uof the group
         [string] $SID,
@@ -121,7 +133,7 @@ function validateAndRemoveUser{
         Write-Output "$SID not found"
         return
     }
-
+    #walk through all members of the group
     foreach ($Groupmember in $Group.members)
     {
         $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($DomainDNSName):3268"
@@ -139,14 +151,14 @@ function validateAndRemoveUser{
             ($excludeUser -notcontains $member.DistinguishedName )                           #ignoer if the member is in the exclude user list
             ) {    
                 try{
-                        Write-Host "remove $member from $($Group.DistinguishedName)"
+                        Write-Output "remove $member from $($Group.DistinguishedName)"
                         Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} -Server $DomainDNSName
                 }
                 catch [Microsoft.ActiveDirectory.Management.ADServerDownException]{
-                    Write-Host "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
+                    Write-Output "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
                 }
                 catch [Microsoft.ActiveDirectory.Management.ADException]{
-                    Write-Host "Cannot remove $($member.DistinguishedName) from $($Group.Distiguishedname) $($Error.Message)"
+                    Write-Output "Cannot remove $($member.DistinguishedName) from $($Group.Distiguishedname) $($Error.Message)"
                 }
                 catch{
                     Write-Output $Error[0].GetType().Name
@@ -155,24 +167,10 @@ function validateAndRemoveUser{
     }
 }
 
-#main program
-$ScriptVersion = "1.0.20231121"
+#region main program
+$ScriptVersion = "1.0.20231205"
 Write-Output "Tier 0 user management version $scriptVersion"
 
-#region setting variables default values
-if($PrivilegedOUPath -eq ""){ 
-    #$PrivilegedOUPath = "OU=Tier 0 - User Privileged,OU=Admin," + (Get-ADDomain).DistinguishedName
-    Write-Output 'Missing relative Tier 1 OU path. Example Tier0UserManagement.ps1 -PrivilegedOUPath "OU=Tier 0,OU=Admin'
-    exit 0x3E8
-}
-
-if ($KerberosPolicyName -eq ""){ 
-    Write-Output 'Missing Kerberos Authentication Policy name. Example .\Tier0UserManagement.ps1 -KerberosPolicyName "Tier 0 Logon Restriction"'
-    #$KerberosPolicyName = "Tier 0 Logon Restriction"
-    exit 0x3E9
-}
-
-#region Parameter validation
 #Validate the Kerboers Authentication policy exists
 $KerberosAuthenticationPolicy = Get-ADAuthenticationPolicy -Filter {Name -eq $KerberosPolicyName}
 if ($null -eq $KerberosAuthenticationPolicy){
@@ -180,31 +178,39 @@ if ($null -eq $KerberosAuthenticationPolicy){
     exit 0xA3
 }
 #enumerate the target domains
-$aryDomainName = @()
+$aryDomainName = @() #contains all domains for script validation
 if ($EnableMulitDomainSupport){
     #MulitdomainSupport is enabled get all forest domains
     $aryDomainName += (Get-ADForest).Domains
 } else {
     $aryDomainName += (Get-ADDomain).DNSRoot
 }
+
 foreach ($DomainName in $aryDomainName){
     #region Validate the group membership and authentication policy settings in the Tier 0 OU 
-    foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf -SearchScope Subtree -Server $DomainName){
-	    #validate the user is member of the Tier 0 users group
-        if ($Tier0UserGroupName -ne ""){
-            if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
-		        Add-ADGroupMember $Tier0UserGroupName $user
+    try{
+        #search for any user in the privileged OU
+        foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf -SearchScope Subtree -Server $DomainName){
+            #validate the user is member of the Tier 0 users group if not add them 
+            if ($Tier0UserGroupName -ne ""){
+                if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
+                    Add-ADGroupMember $Tier0UserGroupName $user
+                }
+            }
+            #validate the Kerberos Authentication policy is assigned to the user
+            if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
+                try {
+                    Write-Output "Adding Kerberos Authentication Policy $KerberosPolicyName on $User"
+                    Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName                  
+                }
+                catch {
+                    Write-Output "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName) $($Error[0])"
+                }
             }
         }
-	    #validate the Kerberos Authentication policy is assigned to the user
-	    if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
-            try {
-                Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName                  
-            }
-            catch {
-                Write-Output "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName) $($Error[0])"
-            }
-        }
+    } 
+    catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
+        Write-Host "Can't get the users in $PrivilegedOUPath on $domain. ADIdentityNotFoundException"
     }
     #endregion
 
@@ -212,8 +218,6 @@ foreach ($DomainName in $aryDomainName){
     #Well-known critical domain group relative domain sid
     $PrivlegeDomainSid = @(
         "512", #Domain Admins
-        #"518", #Schema Admins
-        #"519", #"Enterprise Admins"
         "520", #Group Policy Creator Owner
         "522" #Cloneable Domain Controllers
     #   "527" #Enterprise Key Admins
@@ -235,9 +239,11 @@ foreach ($DomainName in $aryDomainName){
     }
 #endregion
 }
+#Schema and Enterprise Admins only exists in Forest root domain
 if ($RemoveUserFromPrivilegedGroups){
     $forestDNS = (Get-ADDomain).Forest
     $forestSID = (Get-ADDomain -Server $forestDNS).DomainSID.Value
     validateAndRemoveUser -SID "$forestSID-518" -DomainDNSName $forestDNS
     validateAndRemoveUser -SID "$forestSID-519" -DomainDNSName $forestDNS
 }
+#endregion
