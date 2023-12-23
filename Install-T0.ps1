@@ -50,6 +50,9 @@ possibility of such damages
     Version Tracking
     0.1.20231221
         Initial Version
+    0.1.20231223
+        Enable claim support in the entrie forest while enabling KDC support in the Default Domain Controller Policy
+        Enable claim support for clients in the Default Domain Policy
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -93,7 +96,7 @@ is required to provide the same OU structure in the entrie forest
         if the OUs are sucessfully create
     $False
         If at least one OU cannot created. It the user has not the required rights, the function will also return $false 
-#>
+        #>
 function CreateOU {
     [CmdletBinding ( SupportsShouldProcess)]
     param (
@@ -158,6 +161,59 @@ function ContinueOnError {
             Exit
         }
     } while ($UserInput -ne "y")
+}
+
+<#
+.DESCRIPTION 
+    This function enable claim support on domain controllers via Default Domain Controller Policy and enable the claim support
+    on clients
+.SYNOPSIS
+    Enable claim support in the entire domain
+.PARAMETER DomainDNSName
+    The domain DNS Name where the claim support will be enabled
+.OUTPUTS
+    None
+#>
+function EnableClaimSupport {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [string]
+        $DomainDNSName
+    )
+    $DefaultDomainControllerPolicy = "6AC1786C-016F-11D2-945F-00C04FB984F9"
+    $DefaultDomainPolicy = "31B2F340-016D-11D2-945F-00C04FB984F9"
+    #Enable Claim Support on Domain Controllers. 
+    #Write this setting to the default domain controller policy 
+    $KDCEnableClaim = @{
+        GUID = $DefaultDomainControllerPolicy
+        Key = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\KDC\Parameters"
+        ValueName = "CbacAndArmorLevel"
+        Value = 1
+        Type = 'DWORD'
+    } 
+    Set-GPRegistryValue @KDCEnableClaim -Server $DomainDNSName
+    #Enable client claim support for domain controllers
+    #Write this setting to the default domain controller Policy
+    $ClientClaimSupport = @{
+        GUID = $DefaultDomainControllerPolicy
+        Key = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters"
+        ValueName = "EnableCbacAndArmor"
+        Value = 1
+        Type = 'DWORD'
+    }
+
+    Set-GPRegistryValue @ClientClaimSupport
+    #Enable client claim support on any clients
+    #Write this setting to the default domain policy
+    $ClientClaimSupport = @{
+        GUID = $DefaultDomainPolicy
+        Key = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters"
+        ValueName = "EnableCbacAndArmor"
+        Value = 1
+        Type = 'DWORD'
+    }
+    Set-GPRegistryValue @ClientClaimSupport
 }
 #endregion
 #########################################################################################################
@@ -340,6 +396,8 @@ Foreach ($domain in $aryDomains){
             ContinueOnError
         }
     }
+    Write-Host "Enable Claim support"
+    EnableClaimSupport -DomainDNSName $domain
 }
 #endregion
 #region AD groups
