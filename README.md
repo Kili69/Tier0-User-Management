@@ -6,7 +6,7 @@ The downside is that the Kerberos Authentication Policy must be added to each Ti
 ## Solution Version 0.1.20231223
 
 ## The scripts 
-The solution is based on three PowerShell scripts that can be downloaded from the following URL: https://github.com/contoso/Tier0KAP
+The solution is based on three PowerShell scripts that can be downloaded from the following URL: https://github.com/Kili69/Tier0-User-Management
 ###	Tier0ComputerManagement.ps1: 
 This script creates and manages a security group that contains all the Tier 0 computers in the domain. 
 ###	Tier0UserManagement.ps1: 
