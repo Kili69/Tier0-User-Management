@@ -33,7 +33,13 @@ possibility of such damages
     .\Tier0ComputerManagement.ps1 -Tier0ComputerGroupName "Tier0Server" -Tier0ComputerGroupName "OU=Tier 0,OU=Admin;OU=2ndOU"
         The script will search for any computer in OU=Tier 0,OU=Admin and OU=2ndOU in all domains in the forest
     
-.INPUTS
+.PARAMETER Tier0ComputerGroupName
+    Is the Tier 0 computer group Name
+.PARAMETER Tier0ComputerOU
+    Is the relative DistinguishedName of the Tier 0 computer OU path. If multiple Tier 0 OU path available, separate them with a ";"
+.PARAMETER MulitDomainForest
+
+        .INPUTS
     -Tier0ComputerGroupName
         The SAM account name of the Tier 0 computers group
     -Tier0OU
@@ -67,7 +73,7 @@ Param (
     [String]$Tier0ComputerGroupName,
     [Parameter(Mandatory=$true, Position = 1)]
     # DistinguishedName of the OU for Tier 0 computer
-    [string]$Tier0ComputerOU = "OU=Tier 0 - Computers,OU=Admin",
+    [string]$Tier0ComputerOU,
     [Parameter (Mandatory=$false)]
     #Enable the multidomain mode
     [bool]$MulitDomainForest = $true
