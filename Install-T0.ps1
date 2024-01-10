@@ -53,6 +53,12 @@ possibility of such damages
     0.1.20231223
         Enable claim support in the entrie forest while enabling KDC support in the Default Domain Controller Policy
         Enable claim support for clients in the Default Domain Policy
+    0.1.20240108
+        Catching errors if the default domain controller or default domain policy could not be updated
+        General Error while creatig a GMSA will be catched
+    0.1.20240110
+        Remove bug in group policy settings
+        Remove bug in Schedule Task
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -183,27 +189,33 @@ function EnableClaimSupport {
     )
     $DefaultDomainControllerPolicy = "6AC1786C-016F-11D2-945F-00C04FB984F9"
     $DefaultDomainPolicy = "31B2F340-016D-11D2-945F-00C04FB984F9"
-    #Enable Claim Support on Domain Controllers. 
-    #Write this setting to the default domain controller policy 
-    $KDCEnableClaim = @{
-        GUID = $DefaultDomainControllerPolicy
-        Key = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\KDC\Parameters"
-        ValueName = "CbacAndArmorLevel"
-        Value = 1
-        Type = 'DWORD'
-    } 
-    Set-GPRegistryValue @KDCEnableClaim -Server $DomainDNSName
-    #Enable client claim support for domain controllers
-    #Write this setting to the default domain controller Policy
-    $ClientClaimSupport = @{
-        GUID = $DefaultDomainControllerPolicy
-        Key = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters"
-        ValueName = "EnableCbacAndArmor"
-        Value = 1
-        Type = 'DWORD'
+    try {
+        #Enable Claim Support on Domain Controllers. 
+        #Write this setting to the default domain controller policy 
+        $KDCEnableClaim = @{
+            GUID = $DefaultDomainControllerPolicy
+            Key = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\KDC\Parameters"
+            ValueName = "EnableCbacAndArmor"
+            Value = 1
+            Type = 'DWORD'
+        } 
+        Set-GPRegistryValue @KDCEnableClaim -Server (Get-ADDomain -Server $domainDNSName).PDCEmulator
+        #Enable client claim support for domain controllers
+        #Write this setting to the default domain controller Policy
+        $ClientClaimSupport = @{
+            GUID = $DefaultDomainControllerPolicy
+            Key = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters"
+            ValueName = "EnableCbacAndArmor"
+            Value = 1
+            Type = 'DWORD'
+        }
+        Set-GPRegistryValue @ClientClaimSupport -Server (Get-ADDomain -Server $domainDNSName).PDCEmulator
     }
-
-    Set-GPRegistryValue @ClientClaimSupport
+    catch {
+        Write-Host "Failed to update Default Domain Policy Policy in $DomainDNSName" -ForegroundColor Red
+        Write-Host "Set Administrative Templates\KDC\Enable Combound authentication to supported" -ForegroundColor Yellow
+        Write-Host "set Administrative Templates\Kerberos\Enabel client support to Enable"
+    }
     #Enable client claim support on any clients
     #Write this setting to the default domain policy
     $ClientClaimSupport = @{
@@ -213,7 +225,13 @@ function EnableClaimSupport {
         Value = 1
         Type = 'DWORD'
     }
-    Set-GPRegistryValue @ClientClaimSupport
+    try{
+    Set-GPRegistryValue @ClientClaimSupport -Server (Get-ADDomain -Server $domainDNSName).PDCEmulator
+    }
+    catch {
+        Write-Host "Failed to update Default Policy in $DomainDNSName" -ForegroundColor Red
+        Write-Host "Enable Administrative Templates\Kerberos\Enable Claim support to enable" -ForegroundColor Yellow
+    }
 }
 #endregion
 #########################################################################################################
@@ -269,8 +287,8 @@ if (!$SingleDomain -and ((Get-ADForest).Domains.count -gt 1)){
             if ($GMSAName -eq ""){
                 $GMSAName = $DefaultGMSAName
             } else {
-                if ($GMSAName.Length -gt 8){
-                    Write-Host "Group managed service account name exceed the maximum length of 8 characters"
+                if ($GMSAName.Length -gt 20){
+                    Write-Host "Group managed service account name exceed the maximum length of 20 characters"
                     $GMSAName = ""
                 }
             }
@@ -520,6 +538,11 @@ if ($SingleDomain -or ((Get-ADForest).Domains.count -gt 1)){
     catch [Microsoft.ActiveDirectory.Management.ADException] {
         Write-Host "Access denied error occurs while creating a group managed service account. Validate you have the correct privileges" -ForegroundColor Red
         ContinueOnError
+    }
+    catch{
+        Write-Host "a unexpected error has occured while creating the group managed service account" -ForegroundColor Red
+        Write-Host $Error[0] -ForegroundColor Red
+        Write-Host "create a GMSA manually and assing the GMSA to the Enterprise Admins" -ForegroundColor Yellow
     }
 } else {
     $NoGMSA = $true
