@@ -103,17 +103,17 @@
 			</Task>
 		</Properties>
 	</TaskV2>
-	<TaskV2 clsid="{D8896631-B747-47a7-84A6-C155337F3BC8}" name="Install Tier 0 User Management" image="2" changed="2023-12-11 07:42:52" uid="{29740332-626B-432D-8BC3-241467D2495B}">
+	<TaskV2 clsid="{D8896631-B747-47a7-84A6-C155337F3BC8}" name="Change Tier 0 User Management" image="2" changed="2023-12-11 07:42:52" uid="{29740332-626B-432D-8BC3-241467D2495B}">
 		<Properties action="U" name="Install Tier 0 User Management" runAs="NT AUTHORITY\System" logonType="InteractiveToken">
 			<Task version="1.2">
 				<RegistrationInfo><Author>Administrator</Author>
-					<Description>Install the Tier 0 isolation automation GMSA </Description>
+					<Description>Change the Tier 0 isolation automation schedule task principal from system to GMSA </Description>
 				</RegistrationInfo>
 				<Principals>
 					<Principal id="Author">
-						<UserId>NT AUTHORITY\System</UserId>
-						<LogonType>InteractiveToken</LogonType>
-						<RunLevel>LeastPrivilege</RunLevel>
+						<UserId>SYSTEM</UserId>
+						<LogonType>S4U</LogonType>
+						<RunLevel>HighestAvailable</RunLevel>
 					</Principal>
 				</Principals>
 				<Settings>
@@ -138,11 +138,10 @@
 					<Priority>7</Priority>
 				</Settings>
 				<Triggers>
-					<TimeTrigger>
-						<StartBoundary>2023-01-01T00:00:00</StartBoundary>
+					<BootTrigger>
 						<Enabled>true</Enabled>
-						<RandomDelay>PT1H</RandomDelay>
-					</TimeTrigger>
+						<Delay>PT30M</Delay>
+					</BootTrigger>
 				</Triggers>
 				<Actions Context="Author">
 					<Exec>

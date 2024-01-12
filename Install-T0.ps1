@@ -59,6 +59,8 @@ possibility of such damages
     0.1.20240110
         Remove bug in group policy settings
         Remove bug in Schedule Task
+    0.1.20240111
+        Schedule task to change the Tier 0 user Management into a GMSA changed
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -608,5 +610,13 @@ if ($NoGMSA){
     $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('-EnableMulitDomainSupport', '')
 }
 [xml]$ScheduleTaskXML = $ScheduleTaskRaw
+if ($NoGMSA){
+    Foreach ($ChildNode in $ScheduleTaskXML.ScheduledTasks.TaskV2){
+        if ($ChildNode.name -eq "Install Tier 0 User Management"){
+            $ChildNode.ParentNode.RemoveChild($ChildNode) | Out-Null
+        break
+        }
+    }
+}
 $ScheduleTaskXML.Save($GPPath)
 #endregion        
