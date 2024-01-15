@@ -61,6 +61,8 @@ possibility of such damages
         Remove bug in Schedule Task
     0.1.20240111
         Schedule task to change the Tier 0 user Management into a GMSA changed
+    0.1.20240115
+        Fixed bug on group policy update
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -201,7 +203,7 @@ function EnableClaimSupport {
             Value = 1
             Type = 'DWORD'
         } 
-        Set-GPRegistryValue @KDCEnableClaim -Server (Get-ADDomain -Server $domainDNSName).PDCEmulator
+        Set-GPRegistryValue @KDCEnableClaim -Domain $domainDNSName
         #Enable client claim support for domain controllers
         #Write this setting to the default domain controller Policy
         $ClientClaimSupport = @{
@@ -211,7 +213,7 @@ function EnableClaimSupport {
             Value = 1
             Type = 'DWORD'
         }
-        Set-GPRegistryValue @ClientClaimSupport -Server (Get-ADDomain -Server $domainDNSName).PDCEmulator
+        Set-GPRegistryValue @ClientClaimSupport -Domain $domainDNSName
     }
     catch {
         Write-Host "Failed to update Default Domain Policy Policy in $DomainDNSName" -ForegroundColor Red
@@ -228,7 +230,7 @@ function EnableClaimSupport {
         Type = 'DWORD'
     }
     try{
-    Set-GPRegistryValue @ClientClaimSupport -Server (Get-ADDomain -Server $domainDNSName).PDCEmulator
+    Set-GPRegistryValue @ClientClaimSupport -Domain $domainDNSName
     }
     catch {
         Write-Host "Failed to update Default Policy in $DomainDNSName" -ForegroundColor Red
