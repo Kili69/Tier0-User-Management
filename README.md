@@ -90,6 +90,10 @@ The script supports the following parameters:
 Microsoft Powershell 5.0 or higher
 Active Directory Remote Administration Powershell Modules (Windows Server 2016 or higher)
 
+# Contributors
+Many thanks to 
+Dagmar Heidecker
+Andreas Luy
 
 # Credits
 
