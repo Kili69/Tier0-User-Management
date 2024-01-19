@@ -46,6 +46,8 @@ possibility of such damages
         PolicyName and Tier0COmputerGroup parameters are mandatory
     0.1.20231122
         Change the Kerberos Authentication Policy to allow Tier 1 accounts to logon to Tier 0 computers
+    0.1.20240119
+        Rolling NTLM hases is deprecated and will not be enabled anymore
 #>
 [CmdletBinding()]
 Param (
@@ -76,7 +78,7 @@ try {
         $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of {SID($T0GroupSID)})))"
     }
     
-    New-ADAuthenticationPolicy -Name $PolicyName -Enforce -RollingNTLMSecret Required `
+    New-ADAuthenticationPolicy -Name $PolicyName -Enforce `
                                 -UserTGTLifetimeMins $TGTLifeTime `
                                 -Description $KerberosAuthenticationPolicyDescription `
                                 -UserAllowedToAuthenticateFrom $AllowToAutenticateFromSDDL `

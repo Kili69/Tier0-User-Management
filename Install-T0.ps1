@@ -63,6 +63,8 @@ possibility of such damages
         Schedule task to change the Tier 0 user Management into a GMSA changed
     0.1.20240115
         Fixed bug on group policy update
+    0.1.20240119
+        Rolling NTLM hases is deprecated and will not be enabled anymore
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -494,7 +496,6 @@ try {
         $T0GroupSID = (Get-ADGroup -Identity $ComputerGroupName -Properties ObjectSid -Server (Get-ADForest).RootDomain).ObjectSid.Value 
         $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of {SID($T0GroupSID)})))"
         New-ADAuthenticationPolicy -Name $KerberosAuthenticationPolicy -Enforce `
-                                   -RollingNTLMSecret Required `
                                    -UserTGTLifetimeMins $TGTLifeTime `
                                    -Description $KerberosAuthenticationPolicyDescription `
                                    -UserAllowedToAuthenticateFrom $AllowToAutenticateFromSDDL `
