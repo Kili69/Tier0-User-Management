@@ -65,6 +65,9 @@ possibility of such damages
         Fixed bug on group policy update
     0.1.20240119
         Rolling NTLM hases is deprecated and will not be enabled anymore
+    0.1.20240123
+        Kerberos Authentication Policy changed from "Member of each" to "Member of any"
+        The Schedule Task CSE will be registered while creating the Group Policy
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -494,7 +497,7 @@ try {
         #create a Kerberos authentication policy, wher assinged users can logon to members of enterprise domain controllers
         #or member of the Tier 0 computers group
         $T0GroupSID = (Get-ADGroup -Identity $ComputerGroupName -Properties ObjectSid -Server (Get-ADForest).RootDomain).ObjectSid.Value 
-        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of {SID($T0GroupSID)})))"
+        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of_any {SID($T0GroupSID)})))"
         New-ADAuthenticationPolicy -Name $KerberosAuthenticationPolicy -Enforce `
                                    -UserTGTLifetimeMins $TGTLifeTime `
                                    -Description $KerberosAuthenticationPolicyDescription `
@@ -574,22 +577,21 @@ if ($null -eq $ScheduleTaskRaw ){
 $oGPO = Get-GPO -Name $GPOName -ErrorAction SilentlyContinue
 if ($null -eq $oGPO){
     $oGPO = New-gpo -Name $GPOName -Comment "Tier Level enforcement group policy. " -ErrorAction SilentlyContinue
+    $CSEGuid = "[{00000000-0000-0000-0000-000000000000}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}][{AADCED64-746C-4633-A97C-D61349046527}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}]"
+    Set-ADObject -Identity "CN={$($oGPO.Id.Guid)},CN=Policies,CN=System,DC=bloedgelaber,DC=de" -Add @{'gPCMachineExtensionNames' = $CSEGuid}
 }
 #$oGPO = Get-GPO -Name $GPOName -ErrorAction SilentlyContinue
 if ($null -eq $oGPO ){
     $GPPath = ".\ScheduledTasks.xml"
     Write-Host "A group policy for Tier 0 user management could not be created" -ForegroundColor Red
     Write-Host "=> Create a group policy" -ForegroundColor Yellow
-    Write-Host "copy the file .\ScheduledTasks.xml to \\$CurrentDomainDNS\SYSVOL\$CurrentDomainDNS\Policies\<GroupPolicyGUID>\Machine\Preferences\ScheduledTasks" -ForegroundColor Yellow
+    Write-Host "configure the schedule tasks manually" -ForegroundColor Yellow
 } else {
     $GPPath = "\\$((Get-ADDomain).DNSRoot)\SYSVOL\$((Get-ADDomain).DNSRoot)\Policies\{$($oGPO.ID)}\Machine\Preferences\ScheduledTasks"
     if (!(Test-Path "$GPPath")){
         New-Item -ItemType Directory $GPPath | Out-Null
     }
-#    $GPPath += "\Preferences\ScheduledTasks"
-#    if (!(Test-Path $GPPath)){
-#        New-Item -ItemType Directory "$GPPath\ScheduledTasks" | Out-Null
-#    }
+
     $GPPath += "\ScheduledTasks.xml"
     $oGPO | New-GPLink -Target (Get-ADDomain).DomainControllersContainer -LinkEnabled No
     Write-Host "Tier 0 User Management Group Policy is linked to Domain Controllers OU but not activated" -ForegroundColor Yellow -BackgroundColor Blue

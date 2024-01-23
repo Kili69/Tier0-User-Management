@@ -48,6 +48,9 @@ possibility of such damages
         Change the Kerberos Authentication Policy to allow Tier 1 accounts to logon to Tier 0 computers
     0.1.20240119
         Rolling NTLM hases is deprecated and will not be enabled anymore
+    0.1.20240124
+        Claim for Tier 0 / Tier 1 groups changed from Member_of_each to Member_of_any
+        If the Tier1computerGroupName paramter is missing, the user will be asked interactive
 #>
 [CmdletBinding()]
 Param (
@@ -68,14 +71,18 @@ Param (
     [string] $KerberosAuthenticationPolicyDescription = 'This Kerberos Authentication policy used to restrict interactive logon from untrusted computers'
 )
 
-
 try {
     $T0GroupSID = (Get-ADGroup -Identity $Tier0ComputerGroup -Properties ObjectSid).ObjectSid.Value
     if ($Tier1KerberosAuthenticationPolicy){
+        #While the paramter $Tier1ComputerGroupName is not mandatroy, the user will be asked interactive
+        while ($Tier1ComputerGroupName -eq ""){
+            $Tier1ComputerGroupName = Read-Host "Name of the Tier 1 computers group"
+        }
         $T1GroupSID = (Get-ADGroup -Identity $Tier1ComputerGroupName -Properties ObjectSid).ObjectSid.Value
-        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID($T0GroupSID)})|| (Member_of {SID($T1GroupSID)})))"
+        #Claim changed from Member of each to Member of any
+        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of_any {SID($T0GroupSID)})|| (Member_of_any {SID($T1GroupSID)})))"
     } else {
-        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of {SID($T0GroupSID)})))"
+        $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of_any {SID($T0GroupSID)})))"
     }
     
     New-ADAuthenticationPolicy -Name $PolicyName -Enforce `
