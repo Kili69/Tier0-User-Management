@@ -68,6 +68,8 @@ possibility of such damages
     0.1.20240123
         Kerberos Authentication Policy changed from "Member of each" to "Member of any"
         The Schedule Task CSE will be registered while creating the Group Policy
+    0.1.20240125
+        Fix a bug in the interactive Tier 0 Computer OU input
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -321,14 +323,24 @@ while ($Tier0OU -eq ""){
 
 #Validate the computer OU. This is the OU below the base OU. 
 while ($ComputerOUName -eq ""){
-    $Tier0ComputerOUName = Read-Host "Tier 0 Computer OU ($T0ComputerOUDefault)"
+    Write-Host "Name the Computer OU below the Tier 0 OU. Use the relative name path below Tier 0 OU e.g. 'OU=Computers'"
+    $Tier0ComputerOUName = Read-Host "Tier 0 Computer OU below Tier 0 OU ($T0ComputerOUDefault)"
     if ($Tier0ComputerOUName -eq ""){
         #The user pressed return, the default value will be used
-        $ComputerOUName = $T0ComputerOUDefault
-    } else {
-        if (![regex]::Match($Tier0ComputerOUName, $RegExOUPattern).Success){
-            Write-Host "Invalid Tier 0 computer OU"
-            $Tier0ComputerOUName = ""
+        $Tier0ComputerOUName = $T0ComputerOUDefault
+    } 
+    switch -Regex ($Tier0ComputerOUName){
+        "^OU="{
+            $ComputerOUName = $Tier0ComputerOUName
+        }
+        "^(OU=.+),$Tier0OU"{
+            $ComputerOUName = [regex]::Match($Tier0ComputerOUName,"(OU=.+),$Tier0OU").Groups[1].Value
+        }
+        "^[^OU=]"{
+            $ComputerOUName = "OU=$Tier0ComputerOUName"
+                }
+        Default{
+            $ComputerOUName = "OU=$Tier0ComputerOUName"
         }
     }
 }

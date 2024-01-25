@@ -23,18 +23,18 @@ possibility of such damages
 
 .EXAMPLE
 
-    
-.INPUTS
-    -PolicyName
-        The Name of the Kerberos Authentication Policy
-    -Tier0ComputerGroup
-        A group who contains any Tier 0 computer
-    -TGTLifeTime
-        The TGT lifetime in minutes
-    -Tier2KerberosAuthenticationPolicy
-        This switch indicate the Kerberos Authentication Policy will be created for Tier 1
-    -Tier1ComputerGorup
-        The name of the Tier 1 computers group
+.PARAMETER PolicyName
+    Name of the Kerberos Authentication Policy. This parameter is mandatory
+.PARAMETER Tier0ComputerGroup
+    Name of the Tier 0 computer group. This parameter is mandatory
+.PARAMETER TGTLifeTime
+    The Kerberos TGT lifetime for accounts protected by this Kerberos Authentication Policy. Default value is 240 minutes
+.PARAMETER Tier1KerberosAuthenticationPolicy
+    This switch is use to create a Kerberos Authentication Policy for Tier 1. 
+.PARAMETER Tier1ComputerGroupName
+    This parameter will be used with the Tier1KerberosAuthenticationPolicy switch. It is the name of the Tier 1 computer group
+.PARAMETER KerberosAuthenticationPolicyDescription
+    This optional parameter adds a description to the Kerberos Authentication policy
 
 .OUTPUTS
    none
