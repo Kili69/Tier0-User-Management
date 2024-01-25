@@ -322,13 +322,15 @@ while ($Tier0OU -eq ""){
 }
 
 #Validate the computer OU. This is the OU below the base OU. 
-while ($ComputerOUName -eq ""){
-    Write-Host "Name the Computer OU below the Tier 0 OU. Use the relative name path below Tier 0 OU e.g. 'OU=Computers'"
-    $Tier0ComputerOUName = Read-Host "Tier 0 Computer OU below Tier 0 OU ($T0ComputerOUDefault)"
-    if ($Tier0ComputerOUName -eq ""){
-        #The user pressed return, the default value will be used
-        $Tier0ComputerOUName = $T0ComputerOUDefault
-    } 
+Do {
+    if ($ComputerOUName -eq ""){
+        Write-Host "Name the Computer OU below the Tier 0 OU. Use the relative name path below Tier 0 OU e.g. 'OU=Computers'"
+        $Tier0ComputerOUName = Read-Host "Tier 0 Computer OU below Tier 0 OU ($T0ComputerOUDefault)"
+        if ($Tier0ComputerOUName -eq ""){
+            #The user pressed return, the default value will be used
+            $Tier0ComputerOUName = $T0ComputerOUDefault
+        } 
+    }
     switch -Regex ($Tier0ComputerOUName){
         "^OU="{
             $ComputerOUName = $Tier0ComputerOUName
@@ -343,7 +345,7 @@ while ($ComputerOUName -eq ""){
             $ComputerOUName = "OU=$Tier0ComputerOUName"
         }
     }
-}
+}while ($ComputerOUName -eq "")
 
 #Validate the User OU. This is the OU below the base OU. 
 while ($UserOUName -eq ""){
