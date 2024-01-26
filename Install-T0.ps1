@@ -70,6 +70,8 @@ possibility of such damages
         The Schedule Task CSE will be registered while creating the Group Policy
     0.1.20240125
         Fix a bug in the interactive Tier 0 Computer OU input
+    0.1.20240126
+        CSE for schedule task will now be registered automatically
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -267,7 +269,7 @@ $CurrentDomainDN  = (Get-ADDomain).DistinguishedName
 $aryDomains = (Get-ADForest).Domains
 
 $DescriptionT0ComputerGroup = "This group contains any Tier 0 computer. It will be used for Tier 0 Kerberos Authentication policy"
-$DescriptionT0Users         = "This group contains any Tier 0 user"
+#$DescriptionT0Users         = "This group contains any Tier 0 user"
 $KerberosAuthenticationPolicyDescription = "This Kerberos Authentication policy used to restrict interactive logon from untrusted computers"
 
 $T0OUDefault = "OU=Tier 0,OU=Admin"
@@ -324,82 +326,128 @@ while ($Tier0OU -eq ""){
 #Validate the computer OU. This is the OU below the base OU. 
 Do {
     if ($ComputerOUName -eq ""){
-        Write-Host "Name the Computer OU below the Tier 0 OU. Use the relative name path below Tier 0 OU e.g. 'OU=Computers'"
+        Write-Host "Name the Computer OU below the Tier 0 OU. Use the relative name below Tier 0 OU e.g. 'OU=Computers'"
         $Tier0ComputerOUName = Read-Host "Tier 0 Computer OU below Tier 0 OU ($T0ComputerOUDefault)"
         if ($Tier0ComputerOUName -eq ""){
             #The user pressed return, the default value will be used
-            $Tier0ComputerOUName = $T0ComputerOUDefault
-        } 
-    }
-    switch -Regex ($Tier0ComputerOUName){
-        "^OU="{
+            $ComputerOUName = $T0ComputerOUDefault
+        } else {
             $ComputerOUName = $Tier0ComputerOUName
         }
+    }
+    switch -Regex ($ComputerOUName){
+#        "^OU="{
+#            $ComputerOUName = $Tier0ComputerOUName
+#        }
         "^(OU=.+),$Tier0OU"{
-            $ComputerOUName = [regex]::Match($Tier0ComputerOUName,"(OU=.+),$Tier0OU").Groups[1].Value
+            $ComputerOUName = [regex]::Match($ComputerOUName,"(OU=.+),$Tier0OU").Groups[1].Value
         }
         "^[^OU=]"{
-            $ComputerOUName = "OU=$Tier0ComputerOUName"
-                }
-        Default{
-            $ComputerOUName = "OU=$Tier0ComputerOUName"
+            $ComputerOUName = "OU=$ComputerOUName"
         }
     }
 }while ($ComputerOUName -eq "")
 
 #Validate the User OU. This is the OU below the base OU. 
-while ($UserOUName -eq ""){
-    $Tier0UserOU = Read-Host "Tier 0 User OU ($T0UserDefaultOU)"
-    if ($Tier0UserOU -eq ""){
-        $UserOUName = $T0UserDefaultOU
-    } else {
-        if (![regex]::Match($Tier0UserOU).Success){
-            Write-Host "Invalid OU user path"
-            $UserOUName = ""
+do{
+    If ($UserOUName -eq ""){
+        Write-Host "Name the user OU below the Tier 0 OU. Use the relative name below Tier 0 OU e.g. 'OU=Users'"
+        $Tier0UserOUName = Read-Host "Tier 0 User OU below Tier 0 OU ($T0UserDefaultOU)"
+        if ($tier0userOUName -eq ""){
+            $UserOUName = $T0UserDefaultOU
+        } else {
+            $UserOUName = $Tier0UserOUName
         }
     }
-}
-#Validate the service account OU. This is the OU below the base OU. 
+    switch -Regex ($UserOUName){
+        "^(OU=.+),$Tier0OU"{
+            $UserOUName = [regex]::Match($UserOUName,"(OU=.+),$Tier0OU").Groups[1].Value
+        }
+        "^[^OU=]"{
+            $UserOUName = "OU=$UserOUName"
+        }
+    }
+}while ($UserOUName -eq "")
 
-while ($ServiceAccountOUName -eq "") {
-    $Tier0ServiceAccountOU = Read-Host "Service account OU Name ($T0ServiceAccountDefaultOU)"
-    if ($Tier0ServiceAccountOU -eq ""){
-        $ServiceAccountOUName = $T0ServiceAccountDefaultOU
-    } else {
-        if (![regex]::Match($Tier0ServiceAccountOU,$RegExOUPattern).Success){
-            Write-Host "Invalid Service account OU"
-            $ServiceAccountOUName = ""
+#Validate the service account OU. This is the OU below the base OU. 
+do{
+    if ($ServiceAccountOUName -eq ""){
+        Write-Host "Name the service account OU below the Tier 0 OU. Use the relative name below Tier 0 OU e.g. 'OU=Service Accounts'"
+        $Tier0ServiceAccountOU = Read-Host "Tier 0 Service Account OU below Tier 0 OU ($T0ServiceAccountDefaultOU)"
+        if ($Tier0ServiceAccountOU -eq ""){
+            $ServiceAccountOUName = $T0ServiceAccountDefaultOU
+        } else {
+            $ServiceAccountOUName = $Tier0ServiceAccountOU
         }
     }
-}
+    switch -Regex ($ServiceAccountOUName) {
+        "^(OU=.+),$Tier0OU" {
+            $ServiceAccountOUName = [regex]::Match($ServiceAccountOUName,"(OU=.+),$Tier0OU").Groups[1].Value
+          }
+        "^[^OU=]"{
+            $ServiceAccountOUName = "OU=$ServiceAccountOUName"
+        }
+    }
+}while ($ServiceAccountOUName -eq "") 
 
 #Validate the group OU name. This is the OU below the base OU. 
-while ($GroupOUName -eq "") {
-    $GroupOUName = Read-Host "Tier 0 Group OU name ($T0GroupDefaultOU)"
+do{
     if ($GroupOUName -eq ""){
-        $GroupOUName = $T0GroupDefaultOU
-    } else {
-        if (![regex]::Match($GroupOUName,$RegExOUPattern).Success){
-            Write-Host "Invalid Group OU Path"
-            $GroupOUName = ""
+        Write-Host "Name the group OU below Tier 0 OU. Ues the relative name below Tier 0 OU e.g. 'OU=Groups'"
+        $Tier0GroupOU = Read-Host "Tier 0 group OU below Tier 0 OU ($T0GroupDefaultOU)"
+        if ($Tier0GroupOU -eq ""){
+            $GroupOUName = $T0GroupDefaultOU
+        } else {
+            $GroupOUName = $Tier0GroupOU
+        } 
+    }
+    switch -Regex ($GroupOUName) {
+        "^(OU=.+),$Tier0OU" {
+            $GroupOUName = [regex]::Match($GroupOUName,"(OU=.+),$Tier0OU").Groups[1].Value
+          }
+        "^[^OU=]"{
+            $GroupOUName = "OU=$GroupOUName"
         }
     }
-    
-}
+}while ($GroupOUName -eq "")
 
 #Validate the computer group OU name. This is the of the group who contains any Tier 0 computer 
-while ($ComputerGroupName -eq ""){
-    $Tier0ComputerGroupName = Read-Host "Tier 0 computer group ($T0GroupDefault)"
-    if ($Tier0ComputerGroupName -eq ""){
-        $ComputerGroupName = $T0GroupDefault
+do{
+    if ($ComputerGroupName -eq ""){
+        Write-Host "The Computer group must be located below the Tier 0 OU. If you are using a existing group. Take care the group is located below $Tier0OU and the group type is Domain Local or Universal"
+        $Tier0ComputerGroupName = Read-Host "Tier 0 computer group ($T0GroupDefault)"
+        if ($Tier0ComputerGroupName -eq ""){
+            $ComputerGroupName = $T0GroupDefault
+        } else {
+            $ComputerGroupName = $Tier0ComputerGroupName
+        }
+        $oT0ComputerGroup = Get-ADGroup -Filter "Name -eq '$ComputerGroupName'"
+        if ($null -ne $oT0ComputerGroup){
+            if ($oT0ComputerGroup.DistinguishedName -notlike "$Tier0OU*"){
+                Write-Host "The $($oT0ComputerGroup.DistinguishedName) is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
+                $ComputerGroupName = ""
+            }
+        }
     }
-}
-while ($UserGroupName -eq ""){
+}while ($ComputerGroupName -eq "")
+
+<# User group is depecated
+do{
     $Tier0UserGroupName = Read-Host "Tier 0 user group($T0UserGroupDefault)"
     if ($Tier0UserGroupName -eq ""){
         $UserGroupName = $T0UserGroupDefault
+    } else {
+        $userGroupName = $Tier0UserGroupName
     }
-}
+    $oT0UserGroup = Get-ADGroup -Filter "Name -eq $UserGroupName"
+    if ($Null -ne $oT0UserGroup ){
+        If ($oT0UserGroup.DistinguishedName -notlike "*$Tier0OU"){
+            Write-Host "The $UserGroupName is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
+            $UserGroupName = ""
+        }
+    }
+}while ($UserGroupName -eq "")
+#>
 
 #Validate the name of the Tier 0 Kerberos Authentication Policy name
 while ($KerberosAuthenticationPolicy -eq ""){
@@ -450,7 +498,7 @@ $ComputerGroup = Get-ADGroup -Filter "Name -eq '$ComputerGroupName'" -Server $Cu
 if ($null -eq $ComputerGroup){
     #The group could not be found and need to be created
     try {
-        New-ADGroup -Name $ComputerGroupName -Description $DescriptionT0ComputerGroup -GroupScope DomainLocal -GroupCategory Security -Path "$GroupOUName,$Tier0OU,$CurrentDomainDN" -ErrorAction Stop -Server $CurrentDomainDNS
+        New-ADGroup -Name $ComputerGroupName -Description $DescriptionT0ComputerGroup -GroupScope Universal  -GroupCategory Security -Path "$GroupOUName,$Tier0OU,$CurrentDomainDN" -ErrorAction Stop -Server $CurrentDomainDNS
     } 
     catch [System.UnauthorizedAccessException]{
         Write-Host "You don't have the rights to create $ComputerGroupName in $Tier0UserGroupOU,$CurrentDomainDN (access denied)" -ForegroundColor Red
@@ -463,8 +511,8 @@ if ($null -eq $ComputerGroup){
     }
 } else {
     #The computer group should be a domain local group.
-    if ($ComputerGroup.GroupScope -ne "DomainLocal"){
-        Write-Host "The group $($ComputerGroup.Name) group scope is not domain local." -ForegroundColor Yellow
+    if ($ComputerGroup.GroupScope -eq "Global"){
+        Write-Host "The group $($ComputerGroup.Name) group scope is not domain local or Universal." -ForegroundColor Yellow
         ContinueOnError
     }
     if ($ComputerGroup.DistinguishedName -notlike "*,$GroupOUName,$Tier0OU,DC=*"){
@@ -474,6 +522,7 @@ if ($null -eq $ComputerGroup){
         exit
     }
 }
+<# Tier 0 user group is deprecated
 Write-Host "Validating or create $UserGroupName in $CurrentDomainDNS" -ForegroundColor Green
 $UserGroup = Get-ADGroup -Filter "Name -eq '$UserGroupName'"
 if ($null -eq $UserGroup){
@@ -501,7 +550,7 @@ if ($null -eq $UserGroup){
         Write-Host "Move the group to $Tier0UserOU,$CurrentDomainDN and rerun the script" -ForegroundColor Red
     }
 }
-
+#>
 #endregion
 #Region Create Kerberos Authentication Policy
 try {
@@ -592,7 +641,7 @@ $oGPO = Get-GPO -Name $GPOName -ErrorAction SilentlyContinue
 if ($null -eq $oGPO){
     $oGPO = New-gpo -Name $GPOName -Comment "Tier Level enforcement group policy. " -ErrorAction SilentlyContinue
     $CSEGuid = "[{00000000-0000-0000-0000-000000000000}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}][{AADCED64-746C-4633-A97C-D61349046527}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}]"
-    Set-ADObject -Identity "CN={$($oGPO.Id.Guid)},CN=Policies,CN=System,DC=bloedgelaber,DC=de" -Add @{'gPCMachineExtensionNames' = $CSEGuid}
+    Set-ADObject -Identity "CN={$($oGPO.Id.Guid)},CN=Policies,CN=System,$((Get-ADDomain).DistinguishedName)" -Add @{'gPCMachineExtensionNames' = $CSEGuid}
 }
 #$oGPO = Get-GPO -Name $GPOName -ErrorAction SilentlyContinue
 if ($null -eq $oGPO ){

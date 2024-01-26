@@ -3,35 +3,47 @@ Kerberos Authentication Policies are a common way to isolate Tier 0 accounts in 
 The huge benefit of Kerberos Authentication Policy is that it is independent of the client. The isolation is handled on the Key Distribution Center (KDC), which is the service that issues Kerberos tickets, and not on the client. This means that the policy can be enforced regardless of the device or application that the Tier 0 account uses to authenticate.
 The downside is that the Kerberos Authentication Policy must be added to each Tier 0 account manually. This can be a tedious and error-prone task, especially if there are many Tier 0 accounts in the domain. The purpose of these scripts is to automate the manual task and make it easier to manage the Kerberos Authentication Policy for Tier 0 accounts.
 
-## Solution Version 0.1.20231223
-
-## The scripts 
-The solution is based on three PowerShell scripts that can be downloaded from the following URL: https://github.com/Kili69/Tier0-User-Management
-###	Tier0ComputerManagement.ps1: 
-This script creates and manages a security group that contains all the Tier 0 computers in the domain. 
-###	Tier0UserManagement.ps1: 
-This script creates and manages a security group that contains all the Tier 0 users in the domain. The script also apply the Kerberos Authentication Policy to any user who is located in the Tier 0 user OU, which will restrict the Tier 0 users to only request Kerberos tickets from the Tier 0 computers. This will prevent the Tier 0 users from logging on to other devices that are not in the Tier 0 scope.
-### Install-T0.ps1: 
-This script installs and configures the Tier 0 scripts on a designated management computer. The will provide a Group Policy to schedule the Tier 0 scripts to run periodically, which will ensure that the Tier 0 security groups and Kerberos Authentication Policy are updated regularly.
-
-# Key Features
+# Tier 0 User Management Version 0.1
+This solution provides automated prozesses to manage Tier 0 users.
+## Key Features
 * Automatically assignment of Kerberos Authentication Policy on Tier 0 user accounts
 * Automatically deactivation of user accounts which are outside of the Tier 0 OU Structure 
 * Automatically adding Tier 0 member server to the Kerberos Authentication Policy Claim (group)
 
-## How To Use
-Run the Install-T0.ps1 script to install the solution. The installation script will copy the Tier0UserManagement.ps1 and Tier0ComputerManagement.ps1 required scripts to \\ForestRootDomain\SYSVOl\ForestRootDomain\scripts, it will create the Kerberos Authentication Policy and a Group Policy linked to the Domain Controller OU in the Forest Root. This Group Policy contains the Schedule tasks to run the scripts regularly on very domain controller. 
-** The created group policy requires to open a schedule task in preferences/control panel and click on OK. Otherwise the schedule task will not shown up in the group policy **
-** The created group policy is linked to the domain controller OU but not enabled, validate the Group Policy and enable**
+The solution is based on PowerShell scripts triggered by schedule tasks. If the script runs in a mulit domain forest, a group managed service account is needed to run the Tier 0 User Management script. In a single domain mode, the script will run in the system context of a domain controller. 
 
-### Install-T0.ps1
-This script install the solution in the current AD Forest. 
-This script creates the required
-- OU structure for Tier 0 computers, T0 Users, T0 Groups and T0 service accounts. 
-- "Tier 0 computer" and "Tier 0 users" in the Tier 0 groups organizaional unit
-- Kerberos Authenticatin Policy
-- Group Policy to run the scripts as a schedule task
- 
+# Installation
+To install the solution download the Powershell script and run Install-T0.ps1. The installation script must run as a enterprise admin. After the installation script is finished validate Kerberos amoring is functional. If Kerberos amoring is enabled on every DC, move any Tier 0 user to the Tier 0 user OU and any Tier 0 member server to the Tier 0 computers OU.
+On the last step enable the Tier 0 Management group policy on the Domain controller OU 
+
+## The installation in a nutshell
+This script will 
+### create the required Tier 0 OUs on every domain in the forest
+It will create the required OU structure for protected Tier 0 isolation. The names of the OU can be changed. The default names are
+{Domain}\
+         Admin\                 Is the global administration OU for any Tier level
+                Tier 0\                 contains any non-builtin Tier 0 related User, Group and Computer objects
+                    Computers           contains any Tier 0 related computer object. Any computer in this OU will be added to the Tier 0 claim.
+                    Groups              Contains any Tier 0 groups special the Tier 0 computer groups
+                    Service Acocunts    contains any Tier 0 related use object who will used to run a service. 
+                    Users               contains any Tier 0 users
+                    
+### enable Kerberos amoring on the forest
+Kerberos amroing will be enabled on the domain controllers and any client in the forest. On the Default Domain Policy the Administrative Template SYSTEM\Kerberos\Enable claim support will be enabled. On the Default Domain Controller Policy the Administrative Template SYSTEM\KDC\Support Kerberos amoring will be change to the supported state
+### copy the required scripts to the SYSVOL scripts folder
+The installation script will copy the required scrips to \\{Forest-Root}\SYSVOL\{Forest-Root}\Scripts to make the scripts available to any domain controller in the root domain. Please take care this Folder is only writeable to domain admins
+### create a group policy for schedule tasks
+A new group policy "Tier 0 Management" will be created and linked as disabled to the forest-root domain controller OU. 
+
+
+# Powershell  scripts in details 
+The solution is based on three PowerShell scripts that can be downloaded from the following URL: https://github.com/Kili69/Tier0-User-Management
+##	Tier0ComputerManagement.ps1: 
+This script creates and manages a security group that contains all the Tier 0 computers in the domain. 
+##	Tier0UserManagement.ps1: 
+This script creates and manages a security group that contains all the Tier 0 users in the domain. The script also apply the Kerberos Authentication Policy to any user who is located in the Tier 0 user OU, which will restrict the Tier 0 users to only request Kerberos tickets from the Tier 0 computers. This will prevent the Tier 0 users from logging on to other devices that are not in the Tier 0 scope.
+## Install-T0.ps1: 
+This script installs and configures the Tier 0 scripts on a designated management computer. The will provide a Group Policy to schedule the Tier 0 scripts to run periodically, which will ensure that the Tier 0 security groups and Kerberos Authentication Policy are updated regularly.
 
 ### CreatekerberosAuthenticationPolicy.ps1
 (This script is deprecated)
