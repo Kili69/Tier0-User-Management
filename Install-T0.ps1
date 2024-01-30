@@ -72,6 +72,12 @@ possibility of such damages
         Fix a bug in the interactive Tier 0 Computer OU input
     0.1.20240126
         CSE for schedule task will now be registered automatically
+    0.1.20240129
+        If the OU path is added as full qualified DN, the DC componenten will be removed
+    0.1.20240130
+        Computer group names above 20 characters will not be accepted
+        Added debug information
+        The schedule task to change the GMSA will be removed on the group policy preferences if the Tier 0 user management task run in SYSTEM context
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -125,8 +131,17 @@ function CreateOU {
         [string]$DomainDNS
     )
     try{
+        Write-Debug "CreateOU called the $OUPath $DomainDNS"
         #load the OU path into array to create the entire path step by step
         $DomainDN = (Get-ADDomain -Server $DomainDNS).DistinguishedName
+        #normalize OU remove 
+        Write-Debug "Starting createOU $OUPath $DomainDNS"
+        $OUPath = [regex]::Replace($OUPath,"\s?,\s?",",")
+        if ($OUPath.Contains("DC=")){
+            $OUPath = [regex]::Match($OUPath,"((CN|OU)=[^,]+,)+")
+            $OUPath = $OUPath.Substring(0,$OUPath.Length-1)
+        }
+        Write-Debug "Normalized OUPath $OUPath"
         $aryOU=$OUPath.Split(",")
         $BuildOUPath = ""
         #walk through the entire domain 
@@ -200,6 +215,7 @@ function EnableClaimSupport {
         [string]
         $DomainDNSName
     )
+    Write-Debug "EnableClaimSupport $domainDNSName called"
     $DefaultDomainControllerPolicy = "6AC1786C-016F-11D2-945F-00C04FB984F9"
     $DefaultDomainPolicy = "31B2F340-016D-11D2-945F-00C04FB984F9"
     try {
@@ -213,6 +229,7 @@ function EnableClaimSupport {
             Type = 'DWORD'
         } 
         Set-GPRegistryValue @KDCEnableClaim -Domain $domainDNSName
+        Write-Debug "KDC Support enabled in $DomainDNS"
         #Enable client claim support for domain controllers
         #Write this setting to the default domain controller Policy
         $ClientClaimSupport = @{
@@ -223,6 +240,7 @@ function EnableClaimSupport {
             Type = 'DWORD'
         }
         Set-GPRegistryValue @ClientClaimSupport -Domain $domainDNSName
+        Write-Debug "Claim support on domain controllers enabled in $domainDNSName"
     }
     catch {
         Write-Host "Failed to update Default Domain Policy Policy in $DomainDNSName" -ForegroundColor Red
@@ -240,6 +258,7 @@ function EnableClaimSupport {
     }
     try{
     Set-GPRegistryValue @ClientClaimSupport -Domain $domainDNSName
+    Write-Debug "Claim support enabled on every client in $DomainDNS"
     }
     catch {
         Write-Host "Failed to update Default Policy in $DomainDNSName" -ForegroundColor Red
@@ -284,6 +303,7 @@ $DefaultGMSAName = "T0UserMgmt"
 $DefaultKerbAuthPolName = "Tier 0 Restrictions"
 $GPOName = "Tier 0 User Management"
 $RegExOUPattern = "(OU=*[^,]+)*,OU=[^,]+"
+$iMaxGroupNameLength = 20
 #endregion
 
 
@@ -294,6 +314,7 @@ $RegExOUPattern = "(OU=*[^,]+)*,OU=[^,]+"
 #set, the script will also run in the system context. I this scenario the Tier0UserManagement script will not 
 #be able to remove unexpected users for privileged groups
 if (!$SingleDomain -and ((Get-ADForest).Domains.count -gt 1)){
+    Write-Host "Mulit domain forest mode activated" -ForegroundColor Green
     if ($GMSAName -eq ""){ 
         do {
             $GMSAName = Read-Host "Group Managed Service Accountname ($DefaultGMSAName)"
@@ -307,17 +328,20 @@ if (!$SingleDomain -and ((Get-ADForest).Domains.count -gt 1)){
             }
         }while ($GMSAName -eq "")
     }
+} else {
+    Write-Host "Single domain mode activated" -ForegroundColor Green
 }
 #Validate the base OU path. It should be similar like OU=Tier 1,OU=Admin
 #If the parameter is not set, ask the user to enter a path or use the default value
 while ($Tier0OU -eq ""){
+    Write-Host "Define the Tier 0 distinguished name without the domain name"
     $Tier0OU = Read-Host "Tier 0 OU ($T0OUDefault)"
     if ($Tier0OU -eq ""){
         #the user pressed return the default value will be used
         $Tier0OU = $T0OUDefault
     } else {
         if (![regex]::Match($Tier0OU,$RegExOUPattern).Success){
-                Write-Host "invalid OU Path"
+                Write-Host "invalid OU Path" -ForegroundColor Red
                 $Tier0OU = ""
         }
     }
@@ -421,11 +445,16 @@ do{
         } else {
             $ComputerGroupName = $Tier0ComputerGroupName
         }
-        $oT0ComputerGroup = Get-ADGroup -Filter "Name -eq '$ComputerGroupName'"
-        if ($null -ne $oT0ComputerGroup){
-            if ($oT0ComputerGroup.DistinguishedName -notlike "$Tier0OU*"){
-                Write-Host "The $($oT0ComputerGroup.DistinguishedName) is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
-                $ComputerGroupName = ""
+        if ($ComputerGroupName.Length -gt $iMaxGroupNameLength){
+            Write-Host "The computer group name $ComputerGroupName exceed the maximum length of $iMaxGroupLength" -ForegroundColor Red
+            $ComputerGroupName = ""
+        } else {
+            $oT0ComputerGroup = Get-ADGroup -Filter "Name -eq '$ComputerGroupName'"
+            if ($null -ne $oT0ComputerGroup){
+                if ($oT0ComputerGroup.DistinguishedName -notlike "*$Tier0OU*"){
+                    Write-Host "The $($oT0ComputerGroup.DistinguishedName) is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
+                    $ComputerGroupName = ""
+                }
             }
         }
     }
@@ -457,6 +486,17 @@ while ($KerberosAuthenticationPolicy -eq ""){
     } 
 }
 #endregion
+
+Write-Debug "Parameter GMSAName $GMSAName"
+Write-Debug "Parameter Tier0OU $Tier0OU"
+Write-Debug "Parameter ComputerOUName $ComputerOUName"
+Write-Debug "Parameter UserOUName $UserOUName"
+Write-Debug "Parameter ServiceAccountOUName $ServiceAccountOUName"
+Write-Debug "Parameter GroupOUName $GroupOUName"
+Write-Debug "Parameter T0UserGroupName $UserGroupName"
+Write-Debug "Parameter KerberosAuthenticationPolicy $KerberosAuthenticationPolicy"
+Write-Debug "SingleDomain $Singledomain"
+Write-Debug "Domain array $aryDomains"
 
 #region building the OU structure in every domain in the forest or in the local domain if the -singleDomain parameter is set
 Write-Host "**************************************************************************************" -ForegroundColor Green
@@ -505,7 +545,7 @@ if ($null -eq $ComputerGroup){
         ContinueOnError
     }
     catch {
-        Write-Host "A unexpected error has occured while creating $ComputerGroupName in $Domain script aborted"
+        Write-Host "A unexpected error has occured while creating a group with the name '$ComputerGroupName' in $GroupOUName,$Tier0OU,$CurrentDomainDN script aborted" -ForegroundColor Red
         Write-Host $Error[0].Exception.GetType()
         exit
     }
@@ -679,12 +719,8 @@ if ($NoGMSA){
 }
 [xml]$ScheduleTaskXML = $ScheduleTaskRaw
 if ($NoGMSA){
-    Foreach ($ChildNode in $ScheduleTaskXML.ScheduledTasks.TaskV2){
-        if ($ChildNode.name -eq "Install Tier 0 User Management"){
-            $ChildNode.ParentNode.RemoveChild($ChildNode) | Out-Null
-        break
-        }
-    }
+    $GMSAChangeNode  = $ScheduleTaskXML.SelectSingleNode("//TaskV2[@name='Change Tier 0 User Management']")
+    $ScheduleTaskXML.ScheduledTasks.RemoveChild($GMSAChangeNode) 
 }
 $ScheduleTaskXML.Save($GPPath)
 #endregion        
