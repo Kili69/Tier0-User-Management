@@ -64,6 +64,7 @@ possibility of such damages
         if the group cannot be updated, the script exit code is 0x3E9
     0.1.20231124
         The script support the WhafIf parameter
+    1.0 Release Date 30. January 2024
     
 #>
 [cmdletbinding(SupportsShouldProcess=$true)]

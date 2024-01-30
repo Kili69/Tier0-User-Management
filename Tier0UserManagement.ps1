@@ -76,6 +76,7 @@ possibility of such damages
     1.0.20231205
         PrivilegedOUPath, PrivilegedServiceAcocuntOUPath and KerberosAuthenticationPolicyName are mandatory
         exit code 0x3E8 and 0x3E9 deprecated
+    1.0 Release Date 30. January 2024
 #>
 [cmdletbinding(SupportsShouldProcess=$true)]
 param (

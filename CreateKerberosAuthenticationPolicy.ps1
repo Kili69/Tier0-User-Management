@@ -51,6 +51,7 @@ possibility of such damages
     0.1.20240124
         Claim for Tier 0 / Tier 1 groups changed from Member_of_each to Member_of_any
         If the Tier1computerGroupName paramter is missing, the user will be asked interactive
+    1.0 1.0 Release Date 30. January 2024
 #>
 [CmdletBinding()]
 Param (

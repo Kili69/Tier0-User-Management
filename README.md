@@ -28,6 +28,8 @@ It will create the required OU structure for protected Tier 0 isolation. The nam
                     Service Acocunts    contains any Tier 0 related use object who will used to run a service. 
                     Users               contains any Tier 0 users
                     
+### create the Tier 0 computers group
+the Tier 0 computers group will be located in [domain]/Admin/Tier 0/Groups as universal group. If the group already exists in the wrong OU a warning will be presented and the group must be moved manually to the correct OU.
 ### enable Kerberos amoring on the forest
 Kerberos amroing will be enabled on the domain controllers and any client in the forest. On the Default Domain Policy the Administrative Template SYSTEM\Kerberos\Enable claim support will be enabled. On the Default Domain Controller Policy the Administrative Template SYSTEM\KDC\Support Kerberos amoring will be change to the supported state
 ### copy the required scripts to the SYSVOL scripts folder
@@ -97,30 +99,27 @@ The script supports the following parameters:
 
 .\Tier0UserManagement.ps1 -PrivilegedOUPAth 'OU=Users,OU=Tier 0,OU=Admin' - PrivilegedServiceAccountOUPath 'OU=Service Account,OU=Tier 0,OU=Admin' -Tier0UserGroup 'T0-Users' -KerberosPolicyName 'Tier 0 Isolation' -EnableMutiDomainSupport
 
-##Prerequisites 
+## Prerequisites 
 
-Microsoft Powershell 5.0 or higher
-Active Directory Remote Administration Powershell Modules (Windows Server 2016 or higher)
+* Microsoft Powershell 5.0 or higher
+* Active Directory Remote Administration Powershell Modules (Windows Server 2016 or higher)
 
 # Contributors
 Many thanks to 
 Dagmar Heidecker
 Andreas Luy
 
-# Credits
-
 
 # Support
-
+This sample script is not supported under any support program or service. 
+The sample script is provided AS IS without warranty of any kind. If you repo
 
 # You may also like...
 
 - Just-In-Time Administration https://github.com/Kili69/T1JIT
 - Enumaration of local administrators https://github.com/Kili69/LocalAdministrators
 
-# License
 
-BSD
 
 ---
 

@@ -78,6 +78,7 @@ possibility of such damages
         Computer group names above 20 characters will not be accepted
         Added debug information
         The schedule task to change the GMSA will be removed on the group policy preferences if the Tier 0 user management task run in SYSTEM context
+    1.0 Release Date 30. January 2024
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
