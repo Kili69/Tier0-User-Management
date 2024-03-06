@@ -77,6 +77,14 @@ possibility of such damages
         PrivilegedOUPath, PrivilegedServiceAcocuntOUPath and KerberosAuthenticationPolicyName are mandatory
         exit code 0x3E8 and 0x3E9 deprecated
     1.0 Release Date 30. January 2024
+    1.0.20240211
+        If the Kerberos Authentication Policy is applied to a user, the "Mark this user as sensitive and could not be delegated" flag
+        Error Message update on insufficient privileges
+    1.0.20240305
+        Code formating
+    1.0.20240306
+        the exclude user parameter support multiple distinguishednames
+
 #>
 [cmdletbinding(SupportsShouldProcess=$true)]
 param (
@@ -128,17 +136,16 @@ function validateAndRemoveUser{
         #The DNS domain Name
         [string] $DomainDNSName
     )
-    $Group = Get-ADGroup -Identity $SID -Properties members -Server $DomainDNSName
+    $Group = Get-ADGroup -Identity $SID -Properties members,canonicalName -Server $DomainDNSName 
     #validate the SID exists
     if ($null -eq $Group){
         Write-Output "$SID not found"
         return
     }
-    #walk through all members of the group
+    #walk through all members of the group and check this member is a valid user or group
     foreach ($Groupmember in $Group.members)
     {
         $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($DomainDNSName):3268"
-        #if (($member.ObjectSid.Value -notlike "*-500") -and ($member.objectClass -eq "user") ){ #Do not change the build in administrators group membership
         if (($member.ObjectSid.value   -notlike "*-500")                              -and ` #ignore if the member is Built-In Administrator
             ($member.objectSid.value   -notlike "*-512")                              -and ` #ignoer if the member is Domain Admins group
             ($member.ObjectSid.value   -notlike "*-518")                              -and ` #ignore if the member is Schema Admins
@@ -147,9 +154,9 @@ function validateAndRemoveUser{
             ($member.objectSid.Value   -notlike "*-522")                              -and ` #ignore if the member is cloneable domain controllers
             ($member.objectSid.Value   -notlike "*-527")                              -and ` #ignore if the member is Enterprise Key Admins
             ($member.objectClass       -ne "msDS-GroupManagedServiceAccount")         -and ` #ignore if the member is a GMSA
-            ($member.distinguishedName -notlike "*,$PrivilegedOUPath*")               -and ` #ignore if the member is located in the Tier 0 user OU
+            ($member.distinguishedName -notlike "*,$PrivilegedOUPath,*")              -and ` #ignore if the member is located in the Tier 0 user OU
             ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ` #ignore if the member is located in the service account OU
-            ($excludeUser -notcontains $member.DistinguishedName )                           #ignoer if the member is in the exclude user list
+            ($excludeUser              -notlike "*$($member.DistinguishedName)*" )           #ignore if the member is in the exclude user list
             ) {    
                 try{
                         Write-Output "remove $member from $($Group.DistinguishedName)"
@@ -159,7 +166,7 @@ function validateAndRemoveUser{
                     Write-Output "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
                 }
                 catch [Microsoft.ActiveDirectory.Management.ADException]{
-                    Write-Output "Cannot remove $($member.DistinguishedName) from $($Group.Distiguishedname) $($Error.Message)"
+                    Write-Output "Cannot remove $($member.DistinguishedName) from $($Error[0].CategoryInfo.TargetName) $($Error[0].Exception.Message)"
                 }
                 catch{
                     Write-Output $Error[0].GetType().Name
@@ -169,16 +176,18 @@ function validateAndRemoveUser{
 }
 
 #region main program
-$ScriptVersion = "1.0.20231205"
+$ScriptVersion = "1.0.20240306"
 Write-Output "Tier 0 user management version $scriptVersion"
 
-#Validate the Kerboers Authentication policy exists
+#Validate the Kerboers Authentication policy exists. If not terminate the script with error code 0xA3. 
 $KerberosAuthenticationPolicy = Get-ADAuthenticationPolicy -Filter {Name -eq $KerberosPolicyName}
 if ($null -eq $KerberosAuthenticationPolicy){
     Write-Host "$KerberosPolicyName not found"
     exit 0xA3
 }
-#enumerate the target domains
+# enumerate the target domains. If the EnableMultiDomain switch is enabeled in a mulit domain forest, any domain will be part of the 
+# Tier 0 user management. This is the recommended configuration, because the security boundary of Active Directory is the forest not the 
+# domain. Any target domain will be captured in the $aryDomainName variable
 $aryDomainName = @() #contains all domains for script validation
 if ($EnableMulitDomainSupport){
     #MulitdomainSupport is enabled get all forest domains
@@ -192,17 +201,24 @@ foreach ($DomainName in $aryDomainName){
     try{
         #search for any user in the privileged OU
         foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf -SearchScope Subtree -Server $DomainName){
+            <#region Tier0UserGroup
+            #Tier 0 user group is deprecated. Adding users into a Tier 0 user group does not provide any security benefit
             #validate the user is member of the Tier 0 users group if not add them 
             if ($Tier0UserGroupName -ne ""){
                 if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
                     Add-ADGroupMember $Tier0UserGroupName $user
                 }
             }
+            #>
             #validate the Kerberos Authentication policy is assigned to the user
             if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
                 try {
                     Write-Output "Adding Kerberos Authentication Policy $KerberosPolicyName on $User"
-                    Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName                  
+                    Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName
+                    #if the Kerberos Authentication policy is assigned to a user, the user will be marked as "This user is sensitive and cannot be delegated"
+                    #This attribute will only applied to the user, while adding the KerbAuthPol. If the attribute will be removed afterwards it will not be 
+                    #reapplied
+                    Set-ADAccountControl -Identity $user -AccountNotDelegated $True
                 }
                 catch {
                     Write-Output "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName) $($Error[0])"
@@ -216,7 +232,10 @@ foreach ($DomainName in $aryDomainName){
     #endregion
 
     #region validate Critical Group Membership
-    #Well-known critical domain group relative domain sid
+    #any user / group object who is not fulfill the criteria will be removed from the privileged groups
+    #store any well-known critical domain group with relative domain sid in $PrivilegedDomainSID
+    #groups like Backup Operators, Print Operators, Administrators have a well-known SID without domain SID 
+    #Using the SID, provides language independency
     $PrivlegeDomainSid = @(
         "512", #Domain Admins
         "520", #Group Policy Creator Owner

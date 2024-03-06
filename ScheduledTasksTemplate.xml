@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tier0UserManagementVersion 1.0.20240306 -->
 <ScheduledTasks clsid="{CC63F200-7309-4ba0-B154-A71CD118DBCC}">
 	<TaskV2 clsid="{D8896631-B747-47a7-84A6-C155337F3BC8}" name="Tier 0 Computer Management" image="2" changed="2023-12-12 09:13:19" uid="{CA3D2A77-2EA1-4F46-9EA3-C848F4491354}">
 		<Properties action="U" name="Tier 0 Computer Management" runAs="NT AUTHORITY\System" logonType="InteractiveToken"><Task version="1.3">
@@ -10,7 +11,8 @@
 					<Principal id="Author"><UserId>NT AUTHORITY\System</UserId>
 						<LogonType>InteractiveToken</LogonType>
 						<RunLevel>LeastPrivilege</RunLevel>
-					</Principal></Principals>
+					</Principal>
+				</Principals>
 				<Settings>
 					<IdleSettings>
 						<Duration>PT10M</Duration>
@@ -19,11 +21,11 @@
 						<RestartOnIdle>false</RestartOnIdle>
 					</IdleSettings>
 					<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-					<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>
+					<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
 					<StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
 					<AllowHardTerminate>false</AllowHardTerminate>
 					<RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-					<AllowStartOnDemand>false</AllowStartOnDemand>
+					<AllowStartOnDemand>true</AllowStartOnDemand>
 					<Enabled>true</Enabled>
 					<Hidden>false</Hidden>
 					<RunOnlyIfIdle>false</RunOnlyIfIdle>
@@ -32,14 +34,18 @@
 					<Priority>7</Priority>
 				</Settings>
 				<Triggers>
-					<BootTrigger>
+					<CalendarTrigger>
+						<StartBoundary>2024-03-06T00:00:00</StartBoundary>
 						<Enabled>true</Enabled>
-						<Delay>PT30M</Delay>
+						<ScheduleByDay>
+							<DaysInterval>1</DaysInterval>
+						</ScheduleByDay>
 						<Repetition>
-							<Interval>PT15M</Interval>
+							<Interval>PT5M</Interval>
+							<Duration>P1D</Duration>
 							<StopAtDurationEnd>false</StopAtDurationEnd>
 						</Repetition>
-					</BootTrigger>
+					</CalendarTrigger>
 				</Triggers>
 				<Actions Context="Author">
 					<Exec>
@@ -51,7 +57,7 @@
 		</Properties>
 	</TaskV2>
 	<TaskV2 clsid="{D8896631-B747-47a7-84A6-C155337F3BC8}" name="Tier 0 User Management" image="2" changed="2023-12-11 07:48:41" uid="{F6958D72-6B0A-4086-8708-A8ADA0899E01}">
-		<Properties action="U" name="Tier 0 User Management" runAs="NT AUTHORITY\System" logonType="InteractiveToken">
+		<Properties action="C" name="Tier 0 User Management" runAs="NT AUTHORITY\System" logonType="InteractiveToken">
 			<Task version="1.3">
 				<RegistrationInfo>
 					<Author>Administrator</Author>
@@ -85,19 +91,23 @@
 					<Priority>7</Priority>
 				</Settings>
 				<Triggers>
-					<BootTrigger>
+					<CalendarTrigger>
+						<StartBoundary>2024-03-06T00:00:00</StartBoundary>
 						<Enabled>true</Enabled>
-						<Delay>PT30M</Delay>
+						<ScheduleByDay>
+							<DaysInterval>1</DaysInterval>
+						</ScheduleByDay>
 						<Repetition>
-							<Interval>PT10M</Interval>
+							<Interval>PT5M</Interval>
+							<Duration>P1D</Duration>
 							<StopAtDurationEnd>false</StopAtDurationEnd>
 						</Repetition>
-					</BootTrigger>
+					</CalendarTrigger>
 				</Triggers>
 				<Actions Context="Author">
 					<Exec>
 						<Command>powershell.exe</Command>
-						<Arguments>-executionpolicy bypass -NoProfile -NonInteractive -file \\$DomainDNS\sysvol\$DomainDNS\scripts\Tier0UserManagement.ps1 -PrivilegedOUPath "$Tier0UserOUPath" -PrivilegedServiceAccountOUPath "$Tier0ServiceAccountPath" -Tier0UserGroupName "$Tier0UserGroupName" -KerberosPolicyName "$Tier0KerbAuthPol" -EnableMulitDomainSupport</Arguments>
+						<Arguments>-executionpolicy bypass -NoProfile -NonInteractive -file \\$DomainDNS\sysvol\$DomainDNS\scripts\Tier0UserManagement.ps1 -PrivilegedOUPath "$Tier0UserOUPath" -PrivilegedServiceAccountOUPath "$Tier0ServiceAccountPath" -Tier0UserGroupName "$Tier0UserGroupName" -KerberosPolicyName "$Tier0KerbAuthPol" -EnableMulitDomainSupport -ExcludeUser "$ExcludeUser"</Arguments>
 					</Exec>
 				</Actions>
 			</Task>
@@ -138,10 +148,13 @@
 					<Priority>7</Priority>
 				</Settings>
 				<Triggers>
-					<BootTrigger>
+					<CalendarTrigger>
+						<StartBoundary>2000-01-01T00:00:00</StartBoundary>
 						<Enabled>true</Enabled>
-						<Delay>PT30M</Delay>
-					</BootTrigger>
+						<ScheduleByDay>
+							<DaysInterval>1</DaysInterval>
+						</ScheduleByDay>
+					</CalendarTrigger>
 				</Triggers>
 				<Actions Context="Author">
 					<Exec>

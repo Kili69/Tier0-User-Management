@@ -79,6 +79,10 @@ possibility of such damages
         Added debug information
         The schedule task to change the GMSA will be removed on the group policy preferences if the Tier 0 user management task run in SYSTEM context
     1.0 Release Date 30. January 2024
+    1.0.20240305
+        If a Tier 0 user cannot located in the Tier 0 OU (what is not recommended), you can add this user during the setup
+        For the exclude users feature the updated ScheduleTasksTemplate.xml is required
+        Removed deprected code for Tier 0 user group
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -287,6 +291,7 @@ catch {
 $CurrentDomainDNS = (Get-ADDomain).DNSRoot
 $CurrentDomainDN  = (Get-ADDomain).DistinguishedName
 $aryDomains = (Get-ADForest).Domains
+$GlobalCatalog = "$((Get-ADDomainController -Discover -Service GlobalCatalog).HostName):3268"
 
 $DescriptionT0ComputerGroup = "This group contains any Tier 0 computer. It will be used for Tier 0 Kerberos Authentication policy"
 #$DescriptionT0Users         = "This group contains any Tier 0 user"
@@ -298,7 +303,6 @@ $T0UserDefaultOU = "OU=Users"
 $T0ServiceAccountDefaultOU = "OU=Service Accounts"
 $T0GroupDefaultOU= "OU=Groups"
 $T0GroupDefault  = "Tier 0 computers"
-$T0UserGroupDefault = "Tier 0 Users"
 $TGTLifeTime = 240
 $DefaultGMSAName = "T0UserMgmt"
 $DefaultKerbAuthPolName = "Tier 0 Restrictions"
@@ -461,23 +465,21 @@ do{
     }
 }while ($ComputerGroupName -eq "")
 
-<# User group is depecated
-do{
-    $Tier0UserGroupName = Read-Host "Tier 0 user group($T0UserGroupDefault)"
-    if ($Tier0UserGroupName -eq ""){
-        $UserGroupName = $T0UserGroupDefault
-    } else {
-        $userGroupName = $Tier0UserGroupName
-    }
-    $oT0UserGroup = Get-ADGroup -Filter "Name -eq $UserGroupName"
-    if ($Null -ne $oT0UserGroup ){
-        If ($oT0UserGroup.DistinguishedName -notlike "*$Tier0OU"){
-            Write-Host "The $UserGroupName is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
-            $UserGroupName = ""
+$excludeUser = "" #this string contains a list of excluded users distinguishedname. If multiple users will be excluded the will be separated with "|"
+#currently there is no limit of excluded users. This will be changed later
+if ((Read-Host "Do you have Tier 0 user located outside of the Tier 0 users OU?[N]")[0] -eq "y") {
+    do{
+        if ($excludeUser -ne ""){ #The 2nd and each following entry will be spearated with a "|"
+            $excludeUser += "|"
         }
-    }
-}while ($UserGroupName -eq "")
-#>
+        $ExUserDN = Read-Host "DistinguishedName of excluded user"
+        if ($null -eq (Get-ADUser $ExUserDN -Server $GlobalCatalog -ErrorAction SilentlyContinue)){
+            Write-Host "User $ExUserName doesn't exists"
+        } else {
+            $excludeUser += $ExUserDN
+        }
+    } while ((Read-Host "Add another user to exclude?[N]")[0] -eq "y") 
+}
 
 #Validate the name of the Tier 0 Kerberos Authentication Policy name
 while ($KerberosAuthenticationPolicy -eq ""){
@@ -563,35 +565,7 @@ if ($null -eq $ComputerGroup){
         exit
     }
 }
-<# Tier 0 user group is deprecated
-Write-Host "Validating or create $UserGroupName in $CurrentDomainDNS" -ForegroundColor Green
-$UserGroup = Get-ADGroup -Filter "Name -eq '$UserGroupName'"
-if ($null -eq $UserGroup){
-    try {
-        New-ADGroup -Name $UserGroupName -Description $DescriptionT0Users -GroupScope DomainLocal -GroupCategory Security -Path "$GroupOUName,$Tier0OU,$CurrentDomainDN" -Server $CurrentDomainDNS
-    }
-    catch [System.UnauthorizedAccessException]{
-        Write-Host "You don't have the rights to create $UserGroupName in "$GroupOUName,$Tier0OU,$CurrentDomainDN" (access denied)" -ForegroundColor Red
-        ContinueOnError
-    }
-    catch [Microsoft.ActiveDirectory.Management.ADException]{
-        Write-Host "A unexpeted error has occured while create $userGroupName in $Domain" -ForegroundColor Red
-        Write-Host $Error[0].Exception.Message -ForegroundColor red
-        ContinueOnError
-    }
-    catch {
-        Write-Host "A unexpected error has occured while creating $UserGroupName in $Domain script aborted" -ForegroundColor red
-        Write-Host $Error[0].Exception.GetType() -ForegroundColor Red
-        ContinueOnError
-    }
 
-} else {
-    if ($UserGroup.DistinguishedName -notlike "*$Tier0UserOU,DC=*"){
-        Write-Host "The group $($UserGroup.DistinguishedName) is not in the expected OU $($Tier0UserOU,$CurrentDomainDN)" -ForegroundColor Red
-        Write-Host "Move the group to $Tier0UserOU,$CurrentDomainDN and rerun the script" -ForegroundColor Red
-    }
-}
-#>
 #endregion
 #Region Create Kerberos Authentication Policy
 try {
@@ -715,6 +689,12 @@ $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('$Tier0UserOUPath', "$UserOUName,$Ti
 $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('$Tier0ServiceAccountPath', "$ServiceAccountOUName,$Tier0OU")
 $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('$Tier0UserGroupName', "$UserGroupName")
 $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('$Tier0KerbAuthPol', $KerberosAuthenticationPolicy)
+if ($excludeUser -eq ""){
+    $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('-ExcludeUser "$ExcludeUser"',"")
+} else {
+    $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('$ExcludeUser',$excludeUser)
+}
+
 if ($NoGMSA){
     $ScheduleTaskRaw = $ScheduleTaskRaw.Replace('-EnableMulitDomainSupport', '')
 }
@@ -725,3 +705,8 @@ if ($NoGMSA){
 }
 $ScheduleTaskXML.Save($GPPath)
 #endregion        
+Write-host "sometime the Schedule task are not activated by Group Policy. " -ForegroundColor Yellow
+Write-host "In this case to go Group Policy Management console, select 'Tier 0 User Management'"
+Write-Host "navigate to Preferences => Schedule Task"
+Write-Host "create a new schedule task with temporary data. Close the group policy editor"
+Write-Host "delete the task you created before. After group policy update the Tier 0 schedule tasks will appeare on the domain controllers"

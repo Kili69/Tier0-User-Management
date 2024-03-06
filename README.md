@@ -5,6 +5,10 @@ The downside is that the Kerberos Authentication Policy must be added to each Ti
 
 # Tier 0 User Management Version 0.1
 This solution provides automated prozesses to manage Tier 0 users.
+# Version 1.0.20240206
+User objects outside of the Tier 0 users OU can be defined during the setup. Multiple users can be added
+Fix on schedule task management
+
 ## Key Features
 * Automatically assignment of Kerberos Authentication Policy on Tier 0 user accounts
 * Automatically deactivation of user accounts which are outside of the Tier 0 OU Structure 
