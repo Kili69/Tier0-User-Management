@@ -52,6 +52,8 @@ possibility of such damages
         Claim for Tier 0 / Tier 1 groups changed from Member_of_each to Member_of_any
         If the Tier1computerGroupName paramter is missing, the user will be asked interactive
     1.0 1.0 Release Date 30. January 2024
+    1.0.20240404
+        remove service ACL, because it is not functional as expected 
 #>
 [CmdletBinding()]
 Param (
@@ -85,12 +87,11 @@ try {
     } else {
         $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of {SID(ED)})         || (Member_of_any {SID($T0GroupSID)})))"
     }
-    
+    Write-Host $AllowToAutenticateFromSDDL
     New-ADAuthenticationPolicy -Name $PolicyName -Enforce `
                                 -UserTGTLifetimeMins $TGTLifeTime `
                                 -Description $KerberosAuthenticationPolicyDescription `
                                 -UserAllowedToAuthenticateFrom $AllowToAutenticateFromSDDL `
-                                -UserAllowedToAuthenticateTo $AllowToAutenticateFromSDDL `
                                 -ProtectedFromAccidentalDeletion $true
 
                                
