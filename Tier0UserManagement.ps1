@@ -84,9 +84,11 @@ possibility of such damages
         Code formating
     1.0.20240306
         the exclude user parameter support multiple distinguishednames
+    
+    1.0.20240419
+        Logging extension added. Log will now written to a log file in APPDATA\local folder. 
     1.0.20240507
         The validateAndRemoveUser function now support groupnesting in the forest. 
-
 #>
 [cmdletbinding(SupportsShouldProcess=$true)]
 param (
@@ -114,6 +116,42 @@ param (
 
 )
 
+<#
+.SYNOPSIS
+    Write status message to the console and to the log file
+.DESCRIPTION
+    the script status messages are writte to the log file located in the app folder. the the execution date and detailed error messages
+    The log file syntax is [current data and time],[severity],[Message]
+    On error message the current stack trace will be written to the log file
+.PARAMETER Message
+    status message written to the console and to the logfile
+.PARAMETER Severity
+    is the severity of the status message. Values are Error, Warning, Information and Debug. Except Debug all messages will be written 
+    to the console
+#>
+function Write-Log {
+    param (
+        # status message
+        [Parameter(Mandatory=$true)]
+        [string]
+        $Message,
+        #Severity of the message
+        [Parameter (Mandatory = $true)]
+        [Validateset('Error', 'Warning', 'Information', 'Debug') ]
+        $Severity
+    )
+    #Format the log message and write it to the log file
+    $LogLine = "$(Get-Date -Format o), [$Severity], $Message"
+    Add-Content -Path $LogFile -Value $LogLine 
+    switch ($Severity) {
+        'Error'   { 
+            Write-Host $Message -ForegroundColor Red
+            Add-Content -Path $LogFile -Value $Error[0].ScriptStackTrace  
+        }
+        'Warning' { Write-Host $Message -ForegroundColor Yellow}
+        'Information' { Write-Host $Message }
+    }
+}
 
 <#
 .SYNOPSIS
@@ -141,7 +179,7 @@ function validateAndRemoveUser{
     $Group = Get-ADGroup -Identity $SID -Properties members,canonicalName -Server $DomainDNSName 
     #validate the SID exists
     if ($null -eq $Group){
-        Write-Output "$SID not found"
+        Write-Log "Can't validate $SID. This SID is not available" -Severity Warning
         return
     }
     #walk through all members of the group and check this member is a valid user or group
@@ -187,13 +225,30 @@ function validateAndRemoveUser{
 }
 
 #region main program
-$ScriptVersion = "1.0.20240306"
-Write-Output "Tier 0 user management version $scriptVersion"
+#####################################################################################
+# Main program starts here                                                          #
+#####################################################################################
+$ScriptVersion = "1.0.20240419"
+#region Manage log file
+[int]$MaxLogFileSize = 1048576 #Maximum size of the log file
+$LogFile = "$($env:LOCALAPPDATA)\$($MyInvocation.MyCommand).log" #Name and path of the log file
+#rename existing log files to *.sav if the currentlog file exceed the size of $MaxLogFileSize
+if (Test-Path $LogFile){
+    if ((Get-Item $LogFile ).Length -gt $MaxLogFileSize){
+        if (Test-Path "$LogFile.sav"){
+            Remove-Item "$LogFile.sav"
+        }
+        Rename-Item -Path $LogFile -NewName "$logFile.sav"
+    }
+}
+#endregion
+Write-Log -Message $MyInvocation.Line -Severity Debug
+Write-Log -Message "Tier 0 user management version $scriptVersion" -Severity Information
 
 #Validate the Kerboers Authentication policy exists. If not terminate the script with error code 0xA3. 
 $KerberosAuthenticationPolicy = Get-ADAuthenticationPolicy -Filter {Name -eq $KerberosPolicyName}
 if ($null -eq $KerberosAuthenticationPolicy){
-    Write-Host "$KerberosPolicyName not found"
+    Write-Log -Message "Kerberos Authentication Policy '$KerberosPolicyName' not found on AD. Script terminates with error 0xA3" -Severity Error
     exit 0xA3
 }
 # enumerate the target domains. If the EnableMultiDomain switch is enabeled in a mulit domain forest, any domain will be part of the 
@@ -203,8 +258,10 @@ $aryDomainName = @() #contains all domains for script validation
 if ($EnableMulitDomainSupport){
     #MulitdomainSupport is enabled get all forest domains
     $aryDomainName += (Get-ADForest).Domains
+    Write-Log -Message "Multidomain mode is enabled. Found $((Get-ADDomain).Domains.count) domains" -Severity Debug
 } else {
     $aryDomainName += (Get-ADDomain).DNSRoot
+    Write-Log -Message "Single domain mode is enabled"
 }
 
 foreach ($DomainName in $aryDomainName){
@@ -212,6 +269,7 @@ foreach ($DomainName in $aryDomainName){
     try{
         #search for any user in the privileged OU
         foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf -SearchScope Subtree -Server $DomainName){
+            Write-Log -Message "Working on $($User.Distiguishedname)" -Severity Debug
             <#region Tier0UserGroup
             #Tier 0 user group is deprecated. Adding users into a Tier 0 user group does not provide any security benefit
             #validate the user is member of the Tier 0 users group if not add them 
@@ -224,7 +282,7 @@ foreach ($DomainName in $aryDomainName){
             #validate the Kerberos Authentication policy is assigned to the user
             if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
                 try {
-                    Write-Output "Adding Kerberos Authentication Policy $KerberosPolicyName on $User"
+                    Write-Log "Adding Kerberos Authentication Policy $KerberosPolicyName on $User" -Severity Information
                     Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName
                     #if the Kerberos Authentication policy is assigned to a user, the user will be marked as "This user is sensitive and cannot be delegated"
                     #This attribute will only applied to the user, while adding the KerbAuthPol. If the attribute will be removed afterwards it will not be 
@@ -232,13 +290,13 @@ foreach ($DomainName in $aryDomainName){
                     Set-ADAccountControl -Identity $user -AccountNotDelegated $True
                 }
                 catch {
-                    Write-Output "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName) $($Error[0])"
+                    Write-Log -Message "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName))" -Severity Error
                 }
             }
         }
     } 
     catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
-        Write-Host "Can't get the users in $PrivilegedOUPath on $domain. ADIdentityNotFoundException"
+        Write-Log "Can't get the users in $PrivilegedOUPath on $domain. ADIdentityNotFoundException" -Severity Error
     }
     #endregion
 
@@ -254,6 +312,7 @@ foreach ($DomainName in $aryDomainName){
     #   "527" #Enterprise Key Admins
     )
     if ($RemoveUserFromPrivilegedGroups){
+        Write-Log "searching for unexpected users in critical groups" -Severity Debug
         foreach ($relativeSid in $PrivlegeDomainSid) {
             validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
         }
@@ -274,7 +333,9 @@ foreach ($DomainName in $aryDomainName){
 if ($RemoveUserFromPrivilegedGroups){
     $forestDNS = (Get-ADDomain).Forest
     $forestSID = (Get-ADDomain -Server $forestDNS).DomainSID.Value
+    Write-Log "searching for unexpected users in schema admins" -Severity Debug
     validateAndRemoveUser -SID "$forestSID-518" -DomainDNSName $forestDNS
+    Write-Log "searching for unexpteded users in enterprise admins" -Severity Debug
     validateAndRemoveUser -SID "$forestSID-519" -DomainDNSName $forestDNS
 }
 #endregion
