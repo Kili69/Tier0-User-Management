@@ -199,27 +199,27 @@ function validateAndRemoveUser{
                     ($member.distinguishedName -notlike "*,$PrivilegedOUPath,*")              -and ` #ignore if the member is located in the Tier 0 user OU
                     ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ` #ignore if the member is located in the service account OU
                     ($excludeUser              -notlike "*$($member.DistinguishedName)*" )           #ignore if the member is in the exclude user list
-                    ) {    
+                    ){    
                         try{
-                            Write-Output "remove $member from $($Group.DistinguishedName)"
+                            Write-Log -Message "remove $member from $($Group.DistinguishedName)" -Severity Information
                             Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} -Server $DomainDNSName
                         }
                         catch [Microsoft.ActiveDirectory.Management.ADServerDownException]{
-                            Write-Output "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
+                            Write-Log -Message "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)" -Severity Error
                         }
                         catch [Microsoft.ActiveDirectory.Management.ADException]{
-                            Write-Output "Cannot remove $($member.DistinguishedName) from $($Error[0].CategoryInfo.TargetName) $($Error[0].Exception.Message)"
+                            Write-Log -Message "Cannot remove $($member.DistinguishedName) from $($Error[0].CategoryInfo.TargetName) $($Error[0].Exception.Message)" -Severity Error
                         }
                         catch{
-                            Write-Output $Error[0].GetType().Name
+                            Write-Log -Message $Error[0].GetType().Name -Severity Error
                         }
                     }
-                }
+            }
             "group"{
                 $MemberDomainDN = [regex]::Match($member.DistinguishedName,"DC=.*").value
                 $MemberDNSroot = (Get-ADObject -Filter "ncName -eq '$MemberDomainDN'" -SearchBase (Get-ADForest).Partitionscontainer -Properties dnsRoot).dnsRoot
                 validateAndRemoveUser -SID $member.ObjectSid.Value -DomainDNSName $MemberDNSroot
-                }
+            }
         }
     }        
 }
