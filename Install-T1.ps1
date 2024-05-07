@@ -38,6 +38,8 @@ param(
     [Parameter (Mandatory = $false)]
     [string]$Tier0ComputerOU,
     [Parameter (Mandatory = $false)]
+    [string]$Tier0ComputerGroupName,
+    [Parameter (Mandatory = $false)]
     [string]$ServiceAccountOUName,
     [Parameter (Mandatory =$false)]
     [string]$GroupOUName,
@@ -199,6 +201,7 @@ $DefaultKerbAuthPolName = "Tier 1 Restrictions"
 
 $T1UserOUDefault = "OU=Users,OU=Tier 1,OU=Admin"
 $T1ComputerGroupNameDefault = "Tier 1 Computers"
+$T0ComputerGroupNameDefault = "Tier 0 Computers"
 $T1ComputerGroupNameDescription = "This group contains all Tier 1 member server and is used in Kerberos Authentication Policy"
 $T1ComputerOUDefault = "OU=Computers,OU=Tier 1,OU=Admin"
 $T0ComputerOUDefault = "OU=Computers,OU=Tier 0,OU=Admin"
@@ -206,6 +209,7 @@ $T0ComputerOUDefault = "OU=Computers,OU=Tier 0,OU=Admin"
 $T1GroupDefaultOU= "OU=Groups"
 $TGTLifeTime = 240
 $DefaultGMSAName = "T1UserMgmt"
+$DefaultGMSADescription = "GMSA for Tier 1 user management. This account requires write privileges to Tier 1 accounts in all domains of the current forest"
 
 $GPOName = "Tier 1 User Management"
 $RegExOUPattern = "(OU=*[^,]+)*,OU=[^,]+"
@@ -219,12 +223,16 @@ $bAdding = $false #Global variable for adding another value. This parameter will
 #A group managed service account is only required in a mulit domain forest. If the -singleDomain parameter is 
 #set, the script will also run in the system context. I this scenario the Tier0UserManagement script will not 
 #be able to remove unexpected users for privileged groups
-if (!$SingleDomain -and ((Get-ADForest).Domains.count -gt 1)){
+if ((Get-ADForest).count -eq 1){
+    $SingleDomain = $true
+}
+if (!$SingleDomain){
     Write-Host "Mulit domain forest mode activated" -ForegroundColor Green
     Write-Host "If you want to enable the Tier 1 user management only in the current domain, start the script with the switch -SingleDomain"
     $strContinue = Read-Host -Prompt "Do you want to continue?[Y]"
     if ($strContinue -like "n*"){
-        Write-Host "script terminated" -ForegroundColor Red
+        Write-Host "Installation script terminated" -ForegroundColor Red
+        exit
     }
     if ($GMSAName -eq ""){ 
         do {
@@ -268,7 +276,8 @@ if ($Tier1UserOU -eq ""){
                 $Tier1OU += ";$strTier1UserOU"
             }
         }
-        if ((Read-Host -Prompt "Add another OU?[N]") -like "n*"){
+        $strYesOrNo = Read-Host -Prompt "Add another OU?[N]" 
+        if (($strYesOrNo -eq "") -or ($strYesOrNo -like "n*")){
             $bAdding = $true
         }
     }
@@ -296,21 +305,25 @@ if ($Tier1ComputerOU -eq ""){
                 $Tier1ComputerOU += ";$strTier1ComputerOU"
             }
         }
-        if ((Read-Host -Prompt "Add another OU?[N]") -like "n*"){
+        $strYesOrNo = Read-Host -Prompt "Add another OU?[N]" 
+        if (( $strYesOrNo -like "") -or ($strYesOrNo -like "n*")){
             $bAdding = $true
         }
     }
 }
 #endregion
 #region Tier 1 computer group name
-
 if ($Tier1ComputerGroupName -eq ""){
     Write-Host "Name of the group who contains all Tier 1 computers"
-    $strT1ComputerGroupName = Read-Host "Tier 0 computer group name"
+    $strT1ComputerGroupName = Read-Host "Tier 1 computer group name [$T1ComputerGroupNameDefault]"
     if ($strT1ComputerGroupName -eq ""){
         $Tier1ComputerGroupName = $T1ComputerGroupNameDefault
     } else {
-        $Tier1ComputerGroupName = $strT1ComputerGroupName
+        if ($strT1ComputerGroupName.Length -gt $iMaxGroupNameLength){
+            Write-Host "Invalid group name. The maximum length is $iMaxGroupNameLength" -ForegroundColor Red
+        } else {
+            $Tier1ComputerGroupName = $strT1ComputerGroupName
+        }
     }
 }
 #endregion
@@ -321,29 +334,48 @@ if ($Tier0ComputerOU -eq ""){
         Write-Host "Define the relative OU distinguished name from Tier 0 computer without the domain name"
         $strTier0ComputerOU = Read-Host "Tier 0 computer OU ($T0ComputerOUDefault)"
         if ($strTier0ComputerOU -eq ""){
-            $strTier0ComputerOU  = $T0ComputerOUDefault
+            $Tier0ComputerOU  = $T0ComputerOUDefault
         } else {
             $Tier0ComputerOU = $strTier0ComputerOU
         }
-        if ([adsi]::Exists("LDAP://$Tier0computerOU,$((Get-ADDomain).Distiguishedname)")){
+        if ($null -ne (Get-ADObject -Filter * -SearchBase "$Tier0ComputerOU,$CurrentDomainDN")){
                 $bAdding = $true
         } else {
-            Write-Host "The OU $Tier0ComputerOU doesn't exists in $domain"
+            Write-Host "The OU $Tier0ComputerOU doesn't exists in $domain, please provide the correct relative tier 0 computer OU path" -ForegroundColor Yellow
         }
     }
 }
+
+do{
+    if ($Tier0ComputerGroupName -eq ""){
+        $Tier0ComputerGroupName = Read-Host "The name of the Tier 0 computer group name is required for the Kerberos Authentication Policy [$($T0ComputerGroupNameDefault)]"
+        if ($Tier0ComputerGroupName -eq ""){
+            $Tier0ComputerGroupName = $T0ComputerGroupNameDefault
+        }
+    }
+    if ($Null -eq (Get-ADObject -Filter "(ObjectClass -eq 'group') -and (Name -eq '$Tier0ComputerGroupName')")){
+            Write-Host "Can find the group '$tier0ComputerGroupName'. Ensure the name of the Tier 0 computer is correct"
+            $Tier0ComputerGroupName = ""
+    }
+} while ($Tier0ComputerGroupName -eq "")
 #endregion
-#region Tier 0 computerGroup
-xxxxx validieren ob es diese Gruppe gibt
-#endregion
+
+
+
 #region KerberosAuthenticationPolicy
 if ($KerberosAuthenticationPolicy -eq ""){
-    $strKerbAuthName = Read-Host "Name of the Tier 1 Kerberos Authentication Policy Name"
+    $strKerbAuthName = Read-Host "Name of the Tier 1 Kerberos Authentication Policy Name [$DefaultKerbAuthPolName]"
     if ($strKerbAuthName -eq ""){
         $KerberosAuthenticationPolicy = $DefaultKerbAuthPolName
     }
 }
 #endregion
+#endregion
+
+#region Group Managed Service Account
+if (!$SingleDomain){
+    CreateGMSA -GMSAName $GMSAName 
+}
 #endregion
 
 #region OU Structure
@@ -379,13 +411,13 @@ if ($null -eq (Get-ADObject -Filter "name -eq '$Tier1ComputerGroupName'")){
 }
 
 #region Kerberos Authentication Policy
-if ($null -eq (Get-ADObject -LDAPFilter "(&(objectclass=msDS-AuthNPolicy)(name=$KerberosAuthenticationPolicy))" -SearchBase (GET-ADRootDSE).configurationNamingContext)){
+if ($null -eq (Get-ADObject -Filter "(ObjectClass -eq 'msDS-AuthNPolicy') -and (name -eq '$KerberosAuthenticationPolicy')" -SearchBase (GET-ADRootDSE).configurationNamingContext)){
     try {
         $T0GroupSID = (Get-ADGroup -Identity $Tier0ComputerGroupName -Properties ObjectSid).ObjectSid.Value
         $T1GroupSID = (Get-ADGroup -Identity $Tier1ComputerGroupName -Properties ObjectSid).ObjectSid.Value
         #Claim changed from Member of each to Member of any
         $AllowToAutenticateFromSDDL = "O:SYG:SYD:(XA;OICI;CR;;;WD;((Member_of_any {SID($T0GroupSID)})|| (Member_of_any {SID($T1GroupSID)})))"
-        New-ADAuthenticationPolicy -Name $PolicyName -Enforce `
+        New-ADAuthenticationPolicy -Name $KerberosAuthenticationPolicy -Enforce `
                                 -UserTGTLifetimeMins $TGTLifeTime `
                                 -Description $KerberosAuthenticationPolicyDescription `
                                 -UserAllowedToAuthenticateFrom $AllowToAutenticateFromSDDL `
@@ -412,12 +444,22 @@ if (!$SingleDomain){
 #copy script files to SYSVOL\<DOMAIN>\scripts folder. While the script run high privileged, take care the folder is only writeable to Tier 0 users
 try {
     $ScriptTarget = "\\$CurrentDomainDNS\SYSVOL\$CurrentDomainDNS\scripts"
-    Copy-Item .\Tier0ComputerManagement.ps1 $ScriptTarget -ErrorAction Stop
-    Copy-Item .\Tier0UserManagement.ps1 $ScriptTarget -ErrorAction Stop
-} catch {
+    Copy-Item .\Tier1MemberServerManagement.ps1 $ScriptTarget -ErrorAction Stop -Force
+    Copy-Item .\Tier1UserManagement.ps1 $ScriptTarget -ErrorAction Stop -Force
+}
+catch [System.UnauthorizedAccessException] {
+    if (Test-Path $error[0].CategoryInfo.TargetName){
+        Write-Host "The script $($Error[0].CategoryInfo.TargetName) could not be updated. Take care you are using the latest version" -ForegroundColor Yellow
+    } else {
+        Write-Host "Access denied while copying $($Error[0].CategoryInfo.TargetName)" -ForegroundColor Red
+        Write-Host "Installation script terminated" -ForegroundColor Red
+        exit
+    }
+} 
+catch {
     Write-Host "A unexpected error has occured while copy the PowerShell script to $ScriptTarget" -ForegroundColor Red
-    Write-Host "copy the required Tier1MemberServerManagement.ps1 and Tier1userManagement.ps1 to \\$currentDomainDNS\SYSVOL\$CurrentDomainDNS\scripts"
-    ContinueOnError
+    Write-Host "copy the required Tier1MemberServerManagement.ps1 and Tier1userManagement.ps1 to \\$currentDomainDNS\SYSVOL\$CurrentDomainDNS\scripts" 
+    Write-Host "the installaiton script terminated"
 }
 #endregion
 
@@ -431,16 +473,17 @@ if ($null -eq $ScheduleTaskRaw ){
 #Create new Group Policy if required
 $oGPO = Get-GPO -Name $GPOName -ErrorAction SilentlyContinue
 if ($null -eq $oGPO){
-    $oGPO = New-gpo -Name $GPOName -Comment "Tier Level enforcement group policy. " -ErrorAction SilentlyContinue
-    $CSEGuid = "[{00000000-0000-0000-0000-000000000000}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}][{AADCED64-746C-4633-A97C-D61349046527}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}]"
-    Set-ADObject -Identity "CN={$($oGPO.Id.Guid)},CN=Policies,CN=System,$((Get-ADDomain).DistinguishedName)" -Add @{'gPCMachineExtensionNames' = $CSEGuid}
-}
-#the Group Policy doesn't exists and is not created terminate the script
-if ($null -eq $oGPO ){
-    Write-Host "A group policy for Tier 0 user management could not be created" -ForegroundColor Red
-    Write-Host "=> Create a group policy" -ForegroundColor Yellow
-    Write-Host "configure the schedule tasks manually" -ForegroundColor Yellow
-    exit
+    try {
+        $oGPO = New-gpo -Name $GPOName -Comment "Tier Level enforcement group policy. " -ErrorAction SilentlyContinue
+        $CSEGuid = "[{00000000-0000-0000-0000-000000000000}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}][{AADCED64-746C-4633-A97C-D61349046527}{CAB54552-DEEA-4691-817E-ED4A4D1AFC72}]"
+        Set-ADObject -Identity "CN={$($oGPO.Id.Guid)},CN=Policies,CN=System,$((Get-ADDomain).DistinguishedName)" -Add @{'gPCMachineExtensionNames' = $CSEGuid}
+    } catch { 
+        #the Group Policy doesn't exists and is not created terminate the script
+        Write-Host "A group policy for Tier 0 user management could not be created" -ForegroundColor Red
+        Write-Host "=> Create a group policy" -ForegroundColor Yellow
+        Write-Host "configure the schedule tasks manually" -ForegroundColor Yellow
+        exit    
+    }
 }
 #$GPPPath contains the group policy path to the group policy preferences
 $GPPath = "\\$((Get-ADDomain).DNSRoot)\SYSVOL\$((Get-ADDomain).DNSRoot)\Policies\{$($oGPO.ID)}\Machine\Preferences\ScheduledTasks"
