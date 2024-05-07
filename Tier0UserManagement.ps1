@@ -84,6 +84,8 @@ possibility of such damages
         Code formating
     1.0.20240306
         the exclude user parameter support multiple distinguishednames
+    1.0.20240507
+        The validateAndRemoveUser function now support groupnesting in the forest. 
 
 #>
 [cmdletbinding(SupportsShouldProcess=$true)]
@@ -146,33 +148,42 @@ function validateAndRemoveUser{
     foreach ($Groupmember in $Group.members)
     {
         $member = Get-ADObject -Filter {DistinguishedName -eq $Groupmember} -Properties * -server "$($DomainDNSName):3268"
-        if (($member.ObjectSid.value   -notlike "*-500")                              -and ` #ignore if the member is Built-In Administrator
-            ($member.objectSid.value   -notlike "*-512")                              -and ` #ignoer if the member is Domain Admins group
-            ($member.ObjectSid.value   -notlike "*-518")                              -and ` #ignore if the member is Schema Admins
-            ($member.ObjectSid.Value   -notlike "*-519")                              -and ` #ignore if the member is Enterprise Admins
-            ($member.objectSid.Value   -notlike "*-520")                              -and ` #ignore if the member is Group Policy Creator
-            ($member.objectSid.Value   -notlike "*-522")                              -and ` #ignore if the member is cloneable domain controllers
-            ($member.objectSid.Value   -notlike "*-527")                              -and ` #ignore if the member is Enterprise Key Admins
-            ($member.objectClass       -ne "msDS-GroupManagedServiceAccount")         -and ` #ignore if the member is a GMSA
-            ($member.distinguishedName -notlike "*,$PrivilegedOUPath,*")              -and ` #ignore if the member is located in the Tier 0 user OU
-            ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ` #ignore if the member is located in the service account OU
-            ($excludeUser              -notlike "*$($member.DistinguishedName)*" )           #ignore if the member is in the exclude user list
-            ) {    
-                try{
-                        Write-Output "remove $member from $($Group.DistinguishedName)"
-                        Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} -Server $DomainDNSName
+        switch ($member.ObjectClass){
+            "user"{
+                if (($member.ObjectSid.value   -notlike "*-500")                              -and ` #ignore if the member is Built-In Administrator
+                    ($member.objectSid.value   -notlike "*-512")                              -and ` #ignoer if the member is Domain Admins group
+                    ($member.ObjectSid.value   -notlike "*-518")                              -and ` #ignore if the member is Schema Admins
+                    ($member.ObjectSid.Value   -notlike "*-519")                              -and ` #ignore if the member is Enterprise Admins
+                    ($member.objectSid.Value   -notlike "*-520")                              -and ` #ignore if the member is Group Policy Creator
+                    ($member.objectSid.Value   -notlike "*-522")                              -and ` #ignore if the member is cloneable domain controllers
+                    ($member.objectSid.Value   -notlike "*-527")                              -and ` #ignore if the member is Enterprise Key Admins
+                    ($member.objectClass       -ne "msDS-GroupManagedServiceAccount")         -and ` #ignore if the member is a GMSA
+                    ($member.distinguishedName -notlike "*,$PrivilegedOUPath,*")              -and ` #ignore if the member is located in the Tier 0 user OU
+                    ($member.distinguishedName -notlike "*,$PrivilegedServiceAccountOUPath*") -and ` #ignore if the member is located in the service account OU
+                    ($excludeUser              -notlike "*$($member.DistinguishedName)*" )           #ignore if the member is in the exclude user list
+                    ) {    
+                        try{
+                            Write-Output "remove $member from $($Group.DistinguishedName)"
+                            Set-ADObject -Identity $Group -Remove @{member="$($member.DistinguishedName)"} -Server $DomainDNSName
+                        }
+                        catch [Microsoft.ActiveDirectory.Management.ADServerDownException]{
+                            Write-Output "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
+                        }
+                        catch [Microsoft.ActiveDirectory.Management.ADException]{
+                            Write-Output "Cannot remove $($member.DistinguishedName) from $($Error[0].CategoryInfo.TargetName) $($Error[0].Exception.Message)"
+                        }
+                        catch{
+                            Write-Output $Error[0].GetType().Name
+                        }
+                    }
                 }
-                catch [Microsoft.ActiveDirectory.Management.ADServerDownException]{
-                    Write-Output "can't connect to AD-WebServices. $($member.DistinguishedName) is not remove from $($Group.DistinguishedName)"
-                }
-                catch [Microsoft.ActiveDirectory.Management.ADException]{
-                    Write-Output "Cannot remove $($member.DistinguishedName) from $($Error[0].CategoryInfo.TargetName) $($Error[0].Exception.Message)"
-                }
-                catch{
-                    Write-Output $Error[0].GetType().Name
+            "group"{
+                $MemberDomainDN = [regex]::Match($member.DistinguishedName,"DC=.*").value
+                $MemberDNSroot = (Get-ADObject -Filter "ncName -eq '$MemberDomainDN'" -SearchBase (Get-ADForest).Partitionscontainer -Properties dnsRoot).dnsRoot
+                validateAndRemoveUser -SID $member.ObjectSid.Value -DomainDNSName $MemberDNSroot
                 }
         }
-    }
+    }        
 }
 
 #region main program
