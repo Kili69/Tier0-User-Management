@@ -89,6 +89,11 @@ possibility of such damages
         Logging extension added. Log will now written to a log file in APPDATA\local folder. 
     1.0.20240507
         The validateAndRemoveUser function now support groupnesting in the forest. 
+    1.0.20240621
+        New switch parameter -DoNotAddUsersToProtectedUsersGroup. The default behavior is to add all Tier 0 users 
+        (except Built-In, GMSA and service account) to the protected users group. If this swicht is available user 
+        will not be added to the protected users group.
+        The "do not delegate" flag will be added to Tier 0  
 #>
 [cmdletbinding(SupportsShouldProcess=$true)]
 param (
@@ -112,8 +117,10 @@ param (
     [string]$ExcludeUser,
     #Enable mulitdomain support to add all tier 0 users into a single Kerberos Authenticatin Policy
     [Parameter(Mandatory=$false)]
-    [switch]$EnableMulitDomainSupport
-
+    [switch]$EnableMulitDomainSupport,
+    #DO not add Tier 0 user to the protected users
+    [Parameter]
+    [switch]$DoNotAddUsersToProtectedUsersGroup
 )
 
 <#
@@ -228,7 +235,7 @@ function validateAndRemoveUser{
 #####################################################################################
 # Main program starts here                                                          #
 #####################################################################################
-$ScriptVersion = "1.0.20240419"
+$ScriptVersion = "1.0.20240621"
 #region Manage log file
 [int]$MaxLogFileSize = 1048576 #Maximum size of the log file
 $LogFile = "$($env:LOCALAPPDATA)\$($MyInvocation.MyCommand).log" #Name and path of the log file
@@ -261,72 +268,97 @@ if ($EnableMulitDomainSupport){
     Write-Log -Message "Multidomain mode is enabled. Found $((Get-ADDomain).Domains.count) domains" -Severity Debug
 } else {
     $aryDomainName += (Get-ADDomain).DNSRoot
-    Write-Log -Message "Single domain mode is enabled"
+    Write-Log -Message "Single domain mode is enabled" -Severity Information
 }
 
 foreach ($DomainName in $aryDomainName){
+    #validating Web-Services are running on this domain
+    try {
+    Write-Log "Connect to $((Get-ADDomain -Server $DomainName).DistinguishedName) AD web services" -Severity Debug    
     #region Validate the group membership and authentication policy settings in the Tier 0 OU 
-    try{
-        #search for any user in the privileged OU
-        foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy, memberOf -SearchScope Subtree -Server $DomainName){
-            Write-Log -Message "Working on $($User.Distiguishedname)" -Severity Debug
-            <#region Tier0UserGroup
-            #Tier 0 user group is deprecated. Adding users into a Tier 0 user group does not provide any security benefit
-            #validate the user is member of the Tier 0 users group if not add them 
-            if ($Tier0UserGroupName -ne ""){
-                if ($user.memberOf -notcontains $Tier0UsersGroup.DistinguishedName){
-                    Add-ADGroupMember $Tier0UserGroupName $user
+        try{
+            $oProtectedUsersGroup = Get-ADGroup -Identity "$((Get-ADDomain -Server $domainName).DomainSID)-525" -Server $DomainName -Properties members
+            #search for any user in the privileged OU
+            foreach ($user in Get-ADUser -SearchBase "$PrivilegedOUPath,$((Get-ADDomain -Server $DomainName).DistinguishedName)" -Filter * -Properties msDS-AssignedAuthNPolicy,memberOf,UserAccountControl -SearchScope Subtree -Server $DomainName){
+                Write-Log -Message "Working on $($User.Distiguishedname)" -Severity Debug
+                
+                if (($user.UserAccountControl -BAND 1048576) -ne 1048576){
+                    try {
+                        Set-ADAccountControl -Identity $user -AccountNotDelegated $True
+                        Write-Log "Mark $($User.DistinguishedName) as sensitive and cannot be delegated" -Severity Information
+                    }
+                    catch [Microsoft.ActiveDirectory.Management.ADException]{
+                        Write-Log "Cannot add Sensitive flag to the $($user.DistinguishedName)" -Severity Error
+                    }
+                }
+                if ($DoNotAddUsersToProtectedUsersGroup -ne $true){
+                    try{
+                        if (($oProtectedUsersGroup.members -notlike $user.DistinguishedName) -or ($oProtectedUsersGroup.Members.Count -eq 0)) {
+                            Add-ADGroupMember -Identity $oProtectedUsersGroup $user -Server $DomainName
+                            
+                            Write-Log "User $($user.Distiguishedname) is addeded to protected users in $Domain" -Severity Information
+                        }
+                    }
+                    catch [Microsoft.ActiveDirectory.Management.ADException]{
+                        Write-Log "A access denied error has occured on User $($user.DistinguishedName) while adding user to the protected users group)" -Severity Error
+                    }
+                }
+                #validate the Kerberos Authentication policy is assigned to the user
+                if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
+                    try {
+                        Write-Log "Adding Kerberos Authentication Policy $KerberosPolicyName on $User" -Severity Information
+                        Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName
+                        #if the Kerberos Authentication policy is assigned to a user, the user will be marked as "This user is sensitive and cannot be delegated"
+                        #This attribute will only applied to the user, while adding the KerbAuthPol. If the attribute will be removed afterwards it will not be 
+                        #reapplied
+                        Set-ADAccountControl -Identity $user -AccountNotDelegated $True
+                    }
+                    catch {
+                        Write-Log -Message "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName))" -Severity Error
+                    }
                 }
             }
-            #>
-            #validate the Kerberos Authentication policy is assigned to the user
-            if ($user.'msDS-AssignedAuthNPolicy' -ne $KerberosAuthenticationPolicy.DistinguishedName){
-                try {
-                    Write-Log "Adding Kerberos Authentication Policy $KerberosPolicyName on $User" -Severity Information
-                    Set-ADUser $user -AuthenticationPolicy $KerberosPolicyName -Server $DomainName
-                    #if the Kerberos Authentication policy is assigned to a user, the user will be marked as "This user is sensitive and cannot be delegated"
-                    #This attribute will only applied to the user, while adding the KerbAuthPol. If the attribute will be removed afterwards it will not be 
-                    #reapplied
-                    Set-ADAccountControl -Identity $user -AccountNotDelegated $True
-                }
-                catch {
-                    Write-Log -Message "The Kerberos Authenticatin Policy $KerberosPolicyName could not be added to $($user.DistinguishedName))" -Severity Error
-                }
-            }
+        } 
+        catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
+            Write-Log "Can't get the users in $PrivilegedOUPath on $domain. ADIdentityNotFoundException" -Severity Error
         }
-    } 
-    catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
-        Write-Log "Can't get the users in $PrivilegedOUPath on $domain. ADIdentityNotFoundException" -Severity Error
-    }
-    #endregion
+        catch {
+            Write-Log "A unexpected error has occured $($Error[0])" -Severity Error
+        }
+        #endregion
 
-    #region validate Critical Group Membership
-    #any user / group object who is not fulfill the criteria will be removed from the privileged groups
-    #store any well-known critical domain group with relative domain sid in $PrivilegedDomainSID
-    #groups like Backup Operators, Print Operators, Administrators have a well-known SID without domain SID 
-    #Using the SID, provides language independency
-    $PrivlegeDomainSid = @(
-        "512", #Domain Admins
-        "520", #Group Policy Creator Owner
-        "522" #Cloneable Domain Controllers
-    #   "527" #Enterprise Key Admins
-    )
-    if ($RemoveUserFromPrivilegedGroups){
-        Write-Log "searching for unexpected users in critical groups" -Severity Debug
-        foreach ($relativeSid in $PrivlegeDomainSid) {
-            validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
-        }
-        #Backup Operators
-        validateAndRemoveUser -SID "S-1-5-32-551" -DomainDNSName $DomainName
-        #Print Operators
-        validateAndRemoveUser -SID "S-1-5-32-550" -DomainDNSName $DomainName
-        #Server Operators
-        validateAndRemoveUser -SID "S-1-5-32-549" -DomainDNSName $DomainName
-        #Server Operators
-        validateAndRemoveUser -SID "S-1-5-32-548" -DomainDNSName $DomainName
-        #Administrators
-        validateAndRemoveUser -SID "S-1-5-32-544" -DomainDNSName $DomainName
+        #region validate Critical Group Membership
+        #any user / group object who is not fulfill the criteria will be removed from the privileged groups
+        #store any well-known critical domain group with relative domain sid in $PrivilegedDomainSID
+        #groups like Backup Operators, Print Operators, Administrators have a well-known SID without domain SID 
+        #Using the SID, provides language independency
+        $PrivlegeDomainSid = @(
+            "512", #Domain Admins
+            "520", #Group Policy Creator Owner
+            "522" #Cloneable Domain Controllers
+        #   "527" #Enterprise Key Admins
+        )
+        if ($RemoveUserFromPrivilegedGroups){
+            Write-Log "searching for unexpected users in critical groups" -Severity Debug
+            foreach ($relativeSid in $PrivlegeDomainSid) {
+                validateAndRemoveUser -SID "$((Get-ADDomain -server $DomainName).DomainSID)-$RelativeSid" -DomainDNSName $DomainName
+            }
+            #Backup Operators
+            validateAndRemoveUser -SID "S-1-5-32-551" -DomainDNSName $DomainName
+            #Print Operators
+            validateAndRemoveUser -SID "S-1-5-32-550" -DomainDNSName $DomainName
+            #Server Operators
+            validateAndRemoveUser -SID "S-1-5-32-549" -DomainDNSName $DomainName
+            #Server Operators
+            validateAndRemoveUser -SID "S-1-5-32-548" -DomainDNSName $DomainName
+            #Administrators
+            validateAndRemoveUser -SID "S-1-5-32-544" -DomainDNSName $DomainName
     }
+}
+catch {
+    Write-Log -Message "Failed to connect to AD Webservices on $DomainName" -Severity Error
+}
+
 #endregion
 }
 #Schema and Enterprise Admins only exists in Forest root domain
