@@ -83,6 +83,9 @@ possibility of such damages
         If a Tier 0 user cannot located in the Tier 0 OU (what is not recommended), you can add this user during the setup
         For the exclude users feature the updated ScheduleTasksTemplate.xml is required
         Removed deprected code for Tier 0 user group
+    1.0.20241017
+        Kili
+        Bug fixing if the user enters the full distinguishedname instead of the relative name
 #>
 [CmdletBinding (SupportsShouldProcess)]
 param(
@@ -345,7 +348,9 @@ while ($Tier0OU -eq ""){
         #the user pressed return the default value will be used
         $Tier0OU = $T0OUDefault
     } else {
-        if (![regex]::Match($Tier0OU,$RegExOUPattern).Success){
+        #if the users enters the entire distinguished name including the domain DN, the domain DN will removed. 
+        $Tier0OU = [regex]::Match($Tier0OU,$RegExOUPattern).value
+        if ($Tier0OU -eq ""){
                 Write-Host "invalid OU Path" -ForegroundColor Red
                 $Tier0OU = ""
         }
@@ -357,6 +362,7 @@ Do {
     if ($ComputerOUName -eq ""){
         Write-Host "Name the Computer OU below the Tier 0 OU. Use the relative name below Tier 0 OU e.g. 'OU=Computers'"
         $Tier0ComputerOUName = Read-Host "Tier 0 Computer OU below Tier 0 OU ($T0ComputerOUDefault)"
+        $Tier0ComputerOUName = [regex]::Match($Tier0ComputerOUName,"^[^,]+").Value
         if ($Tier0ComputerOUName -eq ""){
             #The user pressed return, the default value will be used
             $ComputerOUName = $T0ComputerOUDefault
@@ -382,6 +388,7 @@ do{
     If ($UserOUName -eq ""){
         Write-Host "Name the user OU below the Tier 0 OU. Use the relative name below Tier 0 OU e.g. 'OU=Users'"
         $Tier0UserOUName = Read-Host "Tier 0 User OU below Tier 0 OU ($T0UserDefaultOU)"
+        $Tier0UserOUName = [regex]::Match($Tier0UserOUName,"^[^,]+").Value
         if ($tier0userOUName -eq ""){
             $UserOUName = $T0UserDefaultOU
         } else {
@@ -403,6 +410,7 @@ do{
     if ($ServiceAccountOUName -eq ""){
         Write-Host "Name the service account OU below the Tier 0 OU. Use the relative name below Tier 0 OU e.g. 'OU=Service Accounts'"
         $Tier0ServiceAccountOU = Read-Host "Tier 0 Service Account OU below Tier 0 OU ($T0ServiceAccountDefaultOU)"
+        $Tier0ServiceAccountOU = [regex]::Match($Tier0ServiceAccountOU,"^[^,]+").Value
         if ($Tier0ServiceAccountOU -eq ""){
             $ServiceAccountOUName = $T0ServiceAccountDefaultOU
         } else {
@@ -424,6 +432,7 @@ do{
     if ($GroupOUName -eq ""){
         Write-Host "Name the group OU below Tier 0 OU. Ues the relative name below Tier 0 OU e.g. 'OU=Groups'"
         $Tier0GroupOU = Read-Host "Tier 0 group OU below Tier 0 OU ($T0GroupDefaultOU)"
+        $Tier0GroupOU = [regex]::($Tier0GroupOU,"^[^,]+").value
         if ($Tier0GroupOU -eq ""){
             $GroupOUName = $T0GroupDefaultOU
         } else {
@@ -456,9 +465,16 @@ do{
         } else {
             $oT0ComputerGroup = Get-ADGroup -Filter "Name -eq '$ComputerGroupName'"
             if ($null -ne $oT0ComputerGroup){
-                if ($oT0ComputerGroup.DistinguishedName -notlike "*$Tier0OU*"){
-                    Write-Host "The $($oT0ComputerGroup.DistinguishedName) is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
-                    $ComputerGroupName = ""
+                if (!$SingleDomain -and ((Get-ADForest).Domains.count -gt 1)){
+                    if ($oT0ComputerGroup.GroupScope -eq "Global"){
+                        Write-Host "In a multidomain configuation the group type of $computerGroupName must universal"
+                        $ComputerGroupName = ""
+                    }
+                } else {
+                    if ($oT0ComputerGroup.DistinguishedName -notlike "*$Tier0OU*"){
+                        Write-Host "The $($oT0ComputerGroup.DistinguishedName) is not located below $Tier0OU. Use a group who exists in $Tier0OU or provide a new group name" -ForegroundColor Red
+                        $ComputerGroupName = ""
+                    }    
                 }
             }
         }
@@ -553,8 +569,8 @@ if ($null -eq $ComputerGroup){
         exit
     }
 } else {
-    #The computer group should be a domain local group.
-    if ($ComputerGroup.GroupScope -eq "Global"){
+    #The computer group should be a domain local or universal group.
+    if (($ComputerGroup.GroupScope -ne "Universal") -or ($ComputerGroup.GroupScope -ne "Global")){
         Write-Host "The group $($ComputerGroup.Name) group scope is not domain local or Universal." -ForegroundColor Yellow
         ContinueOnError
     }
