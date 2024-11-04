@@ -432,7 +432,7 @@ do{
     if ($GroupOUName -eq ""){
         Write-Host "Name the group OU below Tier 0 OU. Ues the relative name below Tier 0 OU e.g. 'OU=Groups'"
         $Tier0GroupOU = Read-Host "Tier 0 group OU below Tier 0 OU ($T0GroupDefaultOU)"
-        $Tier0GroupOU = [regex]::($Tier0GroupOU,"^[^,]+").value
+        $Tier0GroupOU = [regex]::Match($Tier0GroupOU,"^[^,]+").value
         if ($Tier0GroupOU -eq ""){
             $GroupOUName = $T0GroupDefaultOU
         } else {
