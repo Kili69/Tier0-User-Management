@@ -570,7 +570,7 @@ if ($null -eq $ComputerGroup){
     }
 } else {
     #The computer group should be a domain local or universal group.
-    if (($ComputerGroup.GroupScope -ne "Universal") -or ($ComputerGroup.GroupScope -ne "Global")){
+    if (-not (($ComputerGroup.GroupScope -eq "Universal") -or ($ComputerGroup.GroupScope -eq "Global"))){
         Write-Host "The group $($ComputerGroup.Name) group scope is not domain local or Universal." -ForegroundColor Yellow
         ContinueOnError
     }
