@@ -1,3 +1,5 @@
+# This solution will be replaced by new Version 0.2 https://github.com/Kili69/TierLevelIsolation
+
 # Introduction
 Kerberos Authentication Policies are a common way to isolate Tier 0 accounts in Active Directory. Tier 0 accounts are those that have the highest level of privilege and access to the most sensitive resources, such as domain controllers, schema administrators, and enterprise administrators. Isolating Tier 0 accounts can help prevent credential theft, lateral movement, and privilege escalation attacks.
 The huge benefit of Kerberos Authentication Policy is that it is independent of the client. The isolation is handled on the Key Distribution Center (KDC), which is the service that issues Kerberos tickets, and not on the client. This means that the policy can be enforced regardless of the device or application that the Tier 0 account uses to authenticate.
